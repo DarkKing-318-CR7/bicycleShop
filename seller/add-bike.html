@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Bike Marketplace | Đăng tin bán xe</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="../css/bike-marketplace.css">
+</head>
+<body class="seller-add-page">
+    <nav class="navbar navbar-expand-lg fixed-top">
+        <div class="container py-2">
+            <a class="navbar-brand d-flex align-items-center" href="../index.html">
+                <span class="brand-mark"><i class="bi bi-bicycle"></i></span>
+                Bike Marketplace
+            </a>
+            <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="mainNav">
+                <ul class="navbar-nav mx-auto mb-3 mb-lg-0 gap-lg-3">
+                    <li class="nav-item"><a class="nav-link" href="../index.html">Trang chủ</a></li>
+                    <li class="nav-item"><a class="nav-link" href="../bikes.html">Xe đạp</a></li>
+                    <li class="nav-item"><a class="nav-link" href="../bikes.html#categories">Danh mục</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#contact">Liên hệ</a></li>
+                </ul>
+                <div class="d-flex flex-column flex-lg-row gap-2">
+                    <a href="../login.html" class="btn btn-outline-dark">Đăng nhập</a>
+                    <a href="../register.html" class="btn btn-success">Đăng ký</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="page-shell">
+        <section class="container">
+            <div class="page-hero-box">
+                <div class="breadcrumb-note"><i class="bi bi-house-door"></i> Trang chủ <span>/</span> Người bán <span>/</span> Đăng tin xe</div>
+                <h1 class="section-title text-white mb-2">Đăng tin bán xe</h1>
+                <p class="mb-0 text-white-50">Tạo bài đăng chuyên nghiệp để tiếp cận người mua nhanh hơn.</p>
+            </div>
+        </section>
+
+        <section class="container">
+            <div class="row g-4 align-items-start">
+                <div class="col-lg-8">
+                    <div class="form-card">
+                        <h2 class="section-title fs-2 mb-2">Thông tin xe đạp</h2>
+                        <p class="section-subtitle mb-0">Điền đầy đủ thông tin để tin đăng của bạn rõ ràng, đáng tin cậy và dễ tiếp cận hơn với người mua.</p>
+
+                        <form class="mt-4">
+                            <div class="section-block mt-0 pt-0 border-0">
+                                <h3 class="section-heading">Thông tin cơ bản</h3>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Tên xe</label>
+                                        <input type="text" class="form-control" placeholder="Ví dụ: Trek Domane SL 6">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Thương hiệu</label>
+                                        <input type="text" class="form-control" placeholder="Ví dụ: Trek, Giant, Specialized">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Danh mục xe</label>
+                                        <select class="form-select">
+                                            <option selected>Road Bike</option>
+                                            <option>Mountain Bike</option>
+                                            <option>Touring</option>
+                                            <option>Fixed Gear</option>
+                                            <option>City Bike</option>
+                                            <option>E-Bike</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Giá bán</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="bi bi-cash-stack"></i></span>
+                                            <input type="text" class="form-control" placeholder="Nhập giá bán dự kiến">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Tình trạng</label>
+                                        <select class="form-select">
+                                            <option selected>Mới</option>
+                                            <option>Đã qua sử dụng - Rất tốt</option>
+                                            <option>Đã qua sử dụng - Tốt</option>
+                                            <option>Đã qua sử dụng - Khá</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Khu vực</label>
+                                        <input type="text" class="form-control" placeholder="Ví dụ: TP. Hồ Chí Minh">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Năm sản xuất</label>
+                                        <input type="number" class="form-control" placeholder="Ví dụ: 2023">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-block">
+                                <h3 class="section-heading">Thông số kỹ thuật</h3>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Kích thước khung</label>
+                                        <input type="text" class="form-control" placeholder="Ví dụ: 54 cm">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Kích thước bánh xe</label>
+                                        <input type="text" class="form-control" placeholder="Ví dụ: 700C">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Chất liệu khung</label>
+                                        <input type="text" class="form-control" placeholder="Ví dụ: Carbon, Nhôm">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Hệ thống truyền động</label>
+                                        <input type="text" class="form-control" placeholder="Ví dụ: Shimano 105">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Loại phanh</label>
+                                        <input type="text" class="form-control" placeholder="Ví dụ: Phanh đĩa thủy lực">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Màu sắc</label>
+                                        <input type="text" class="form-control" placeholder="Ví dụ: Đen nhám">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-block">
+                                <h3 class="section-heading">Mô tả</h3>
+                                <div class="row g-3">
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">Mô tả ngắn</label>
+                                        <input type="text" class="form-control" placeholder="Một dòng mô tả nổi bật về chiếc xe của bạn">
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">Mô tả chi tiết</label>
+                                        <textarea class="form-control" placeholder="Mô tả tình trạng xe, lịch sử sử dụng, điểm nổi bật, phụ kiện đi kèm và lý do bán..."></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-block">
+                                <h3 class="section-heading">Hình ảnh</h3>
+                                <div class="row g-3">
+                                    <div class="col-12">
+                                        <div class="upload-box">
+                                            <i class="bi bi-cloud-arrow-up fs-1 text-success mb-3"></i>
+                                            <strong>Tải ảnh chính của xe</strong>
+                                            <p class="mb-0 mt-2">Kéo thả ảnh vào đây hoặc chọn ảnh từ thiết bị của bạn.</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3"><div class="upload-thumb"><i class="bi bi-image fs-3 mb-2 text-success"></i><span>Ảnh phụ 1</span></div></div>
+                                    <div class="col-6 col-md-3"><div class="upload-thumb"><i class="bi bi-image fs-3 mb-2 text-success"></i><span>Ảnh phụ 2</span></div></div>
+                                    <div class="col-6 col-md-3"><div class="upload-thumb"><i class="bi bi-image fs-3 mb-2 text-success"></i><span>Ảnh phụ 3</span></div></div>
+                                    <div class="col-6 col-md-3"><div class="upload-thumb"><i class="bi bi-image fs-3 mb-2 text-success"></i><span>Ảnh phụ 4</span></div></div>
+                                    <div class="col-12">
+                                        <p class="text-muted mb-0">Khuyến nghị sử dụng ảnh rõ nét, đủ sáng và chụp nhiều góc để tăng độ tin cậy cho tin đăng.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-block">
+                                <h3 class="section-heading">Thông tin liên hệ</h3>
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Tên người bán</label>
+                                        <input type="text" class="form-control" placeholder="Nhập tên hiển thị">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Số điện thoại</label>
+                                        <input type="tel" class="form-control" placeholder="Nhập số điện thoại">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">Email</label>
+                                        <input type="email" class="form-control" placeholder="Nhập email liên hệ">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Phương thức liên hệ ưu tiên</label>
+                                        <select class="form-select">
+                                            <option selected>Điện thoại</option>
+                                            <option>Email</option>
+                                            <option>Cả hai</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="action-row">
+                                <a href="#" class="btn btn-outline-dark">Lưu nháp</a>
+                                <a href="#" class="btn btn-success">Đăng tin ngay</a>
+                                <a href="#" class="btn btn-outline-success">Xem trước</a>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="policy-card mt-4">
+                        <h3 class="section-heading">Chính sách đăng tin</h3>
+                        <p class="mb-0">Tin đăng cần phản ánh đúng tình trạng thực tế của xe, sử dụng hình ảnh rõ ràng và cung cấp thông tin trung thực. Nền tảng có thể kiểm duyệt nội dung để đảm bảo chất lượng và trải nghiệm chung cho người mua.</p>
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="sidebar-card">
+                        <h3 class="section-heading">Mẹo đăng tin hiệu quả</h3>
+                        <ul class="tip-list">
+                            <li><i class="bi bi-check-circle-fill"></i><span>Chọn ảnh rõ nét, đủ sáng và chụp nhiều góc khác nhau.</span></li>
+                            <li><i class="bi bi-check-circle-fill"></i><span>Ghi đúng tình trạng xe để tăng độ tin cậy với người mua.</span></li>
+                            <li><i class="bi bi-check-circle-fill"></i><span>Mô tả trung thực lịch sử sử dụng và phụ kiện đi kèm.</span></li>
+                            <li><i class="bi bi-check-circle-fill"></i><span>Đặt giá hợp lý theo tình trạng và thương hiệu của xe.</span></li>
+                            <li><i class="bi bi-check-circle-fill"></i><span>Bổ sung thông số kỹ thuật để người xem dễ so sánh.</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="sidebar-card mt-4">
+                        <h3 class="section-heading">Xem nhanh tin đăng</h3>
+                        <div class="preview-box">
+                            <div class="preview-image">
+                                <div class="text-center">
+                                    <i class="bi bi-image fs-1 d-block mb-2"></i>
+                                    <span>Ảnh xem trước</span>
+                                </div>
+                            </div>
+                            <div class="preview-content">
+                                <div class="preview-title">Tên xe sẽ hiển thị tại đây</div>
+                                <div class="price mb-2">Giá bán</div>
+                                <div class="preview-meta mb-1">Tình trạng: Chưa cập nhật</div>
+                                <div class="preview-meta mb-2">Khu vực: Chưa cập nhật</div>
+                                <p class="preview-meta mb-0">Bản xem trước sẽ được cập nhật tự động khi tích hợp backend sau này.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-card support-card mt-4">
+                        <h3 class="section-heading">Cần hỗ trợ?</h3>
+                        <p class="mb-2">Liên hệ đội ngũ hỗ trợ nếu bạn cần trợ giúp khi tạo tin đăng hoặc chuẩn bị hình ảnh sản phẩm.</p>
+                        <p class="mb-2"><i class="bi bi-envelope me-2"></i> seller-support@bikemarketplace.com</p>
+                        <p class="mb-3"><i class="bi bi-telephone me-2"></i> 1900 5678</p>
+                        <a href="#contact" class="btn btn-outline-success">Liên hệ hỗ trợ</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="container">
+            <div class="cta-band">
+                <div class="row align-items-center g-4">
+                    <div class="col-lg-8">
+                        <h2 class="fw-bold mb-2">Tăng cơ hội bán xe với tin đăng chất lượng</h2>
+                        <p class="mb-0">Hoàn thiện thông tin chi tiết để người mua dễ dàng tin tưởng và liên hệ.</p>
+                    </div>
+                    <div class="col-lg-4 d-flex flex-column flex-sm-row gap-3 justify-content-lg-end">
+                        <a href="../bikes.html" class="btn btn-warning text-dark">Xem xe đang bán</a>
+                        <a href="#contact" class="btn btn-outline-light">Liên hệ đội ngũ hỗ trợ</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer id="contact">
+        <div class="container">
+            <div class="row g-4">
+                <div class="col-lg-4">
+                    <h4 class="fw-bold mb-3">Bike Marketplace</h4>
+                    <p>Nền tảng mua bán xe đạp hiện đại giúp người bán đăng tin chuyên nghiệp và tiếp cận người mua nhanh chóng hơn.</p>
+                </div>
+                <div class="col-lg-4">
+                    <h5 class="fw-bold mb-3">Thông tin liên hệ</h5>
+                    <p class="mb-2"><i class="bi bi-geo-alt me-2"></i> 128 Market Street, Ho Chi Minh City</p>
+                    <p class="mb-2"><i class="bi bi-telephone me-2"></i> +84 901 234 567</p>
+                    <p class="mb-0"><i class="bi bi-envelope me-2"></i> hello@bikemarketplace.com</p>
+                </div>
+                <div class="col-lg-4">
+                    <h5 class="fw-bold mb-3">Theo dõi chúng tôi</h5>
+                    <div class="d-flex gap-2 mb-3">
+                        <a class="social-link" href="#" aria-label="Facebook"><i class="bi bi-facebook"></i></a>
+                        <a class="social-link" href="#" aria-label="Instagram"><i class="bi bi-instagram"></i></a>
+                        <a class="social-link" href="#" aria-label="Twitter"><i class="bi bi-twitter-x"></i></a>
+                        <a class="social-link" href="#" aria-label="YouTube"><i class="bi bi-youtube"></i></a>
+                    </div>
+                    <p class="mb-0">Hỗ trợ mỗi ngày từ 8:00 AM đến 8:00 PM dành cho cộng đồng mua bán xe đạp.</p>
+                </div>
+            </div>
+            <div class="border-top border-secondary-subtle mt-4 pt-4 text-center text-white-50">
+                <small>&copy; 2026 Bike Marketplace. Trang đăng tin bán xe được xây dựng với HTML, CSS, Bootstrap 5 và Bootstrap Icons.</small>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+</body>
+</html>

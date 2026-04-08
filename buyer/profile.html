@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Bike Marketplace | Hồ sơ cá nhân</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="../css/bike-marketplace.css">
+</head>
+<body class="seller-my-bikes-page">
+    <nav class="navbar navbar-expand-lg fixed-top">
+        <div class="container py-2">
+            <a class="navbar-brand d-flex align-items-center" href="../index.html">
+                <span class="brand-mark"><i class="bi bi-bicycle"></i></span>
+                Bike Marketplace
+            </a>
+            <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="mainNav">
+                <ul class="navbar-nav mx-auto mb-3 mb-lg-0 gap-lg-3">
+                    <li class="nav-item"><a class="nav-link" href="../index.html">Trang chủ</a></li>
+                    <li class="nav-item"><a class="nav-link" href="../bikes.html">Xe đạp</a></li>
+                    <li class="nav-item"><a class="nav-link" href="../bikes.html#categories">Danh mục</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#contact">Liên hệ</a></li>
+                </ul>
+                <div class="d-flex flex-column flex-lg-row gap-2">
+                    <a href="favorites.html" class="btn btn-outline-dark">Yêu thích</a>
+                    <a href="profile.html" class="btn btn-success">Tài khoản</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="page-shell">
+        <section class="container">
+            <div class="page-hero-box">
+                <div class="breadcrumb-note"><i class="bi bi-house-door"></i> Trang chủ <span>/</span> Người mua <span>/</span> Hồ sơ cá nhân</div>
+                <h1 class="section-title text-white mb-2">Hồ sơ cá nhân</h1>
+                <p class="mb-0 text-white-50">Quản lý thông tin tài khoản và theo dõi hoạt động của bạn trên hệ thống.</p>
+            </div>
+        </section>
+
+        <section class="container">
+            <div class="row g-4 align-items-start">
+                <div class="col-lg-4">
+                    <div class="sidebar-card mb-4">
+                        <div class="text-center">
+                            <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=240&q=80" alt="Ảnh đại diện người mua" class="rounded-circle shadow-sm mb-3" width="120" height="120">
+                            <h2 class="section-title fs-3 mb-2">Trần Bích Ngọc</h2>
+                            <div class="d-inline-flex align-items-center gap-2 mb-3">
+                                <span class="status-badge status-approved">Người mua</span>
+                            </div>
+                            <p class="mb-2"><i class="bi bi-envelope me-2"></i>ngoc.tran@mail.com</p>
+                            <p class="mb-2"><i class="bi bi-telephone me-2"></i>0912 345 876</p>
+                            <p class="mb-2"><i class="bi bi-calendar-event me-2"></i>Tham gia từ 03/2026</p>
+                            <p class="text-muted mb-3">Yêu thích các mẫu road bike gọn nhẹ và những chiếc city bike phù hợp đi lại hàng ngày.</p>
+                            <a href="#" class="btn btn-outline-success">Đổi ảnh đại diện</a>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-6">
+                            <div class="stats-card h-100">
+                                <span class="stats-icon"><i class="bi bi-heart-fill"></i></span>
+                                <div><small>Xe đã lưu</small><strong>18</strong></div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="stats-card h-100">
+                                <span class="stats-icon"><i class="bi bi-chat-dots-fill"></i></span>
+                                <div><small>Liên hệ đã gửi</small><strong>7</strong></div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="stats-card h-100">
+                                <span class="stats-icon"><i class="bi bi-clock-history"></i></span>
+                                <div><small>Lần đăng nhập gần nhất</small><strong>Hôm nay</strong></div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="stats-card h-100">
+                                <span class="stats-icon"><i class="bi bi-shield-check"></i></span>
+                                <div><small>Trạng thái tài khoản</small><strong>Hoạt động</strong></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="helper-card">
+                        <h3 class="section-heading">Bảo mật tài khoản</h3>
+                        <ul class="tip-list">
+                            <li><i class="bi bi-check-circle-fill"></i><span>Sử dụng mật khẩu mạnh và có độ dài an toàn.</span></li>
+                            <li><i class="bi bi-check-circle-fill"></i><span>Không chia sẻ thông tin đăng nhập với người khác.</span></li>
+                            <li><i class="bi bi-check-circle-fill"></i><span>Cập nhật email và số điện thoại chính xác để nhận thông báo.</span></li>
+                            <li><i class="bi bi-check-circle-fill"></i><span>Theo dõi hoạt động tài khoản thường xuyên để phát hiện bất thường.</span></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="col-lg-8">
+                    <div class="form-card">
+                        <h2 class="section-title fs-2 mb-2">Cập nhật thông tin cá nhân</h2>
+                        <p class="section-subtitle mb-0">Điều chỉnh thông tin liên hệ và hồ sơ để cá nhân hóa trải nghiệm mua xe trên hệ thống.</p>
+
+                        <form class="mt-4">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Họ và tên</label>
+                                    <input type="text" class="form-control" value="Trần Bích Ngọc">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Email</label>
+                                    <input type="email" class="form-control" value="ngoc.tran@mail.com">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Số điện thoại</label>
+                                    <input type="tel" class="form-control" value="0912 345 876">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Địa chỉ</label>
+                                    <input type="text" class="form-control" value="145 Nguyễn Thị Minh Khai, Quận 3">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Thành phố / Khu vực</label>
+                                    <input type="text" class="form-control" value="TP. Hồ Chí Minh">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Giới thiệu ngắn</label>
+                                    <input type="text" class="form-control" value="Yêu thích xe đạp thể thao phục vụ tập luyện và di chuyển hằng ngày.">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Mật khẩu mới</label>
+                                    <input type="password" class="form-control" placeholder="Nhập mật khẩu mới">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Xác nhận mật khẩu mới</label>
+                                    <input type="password" class="form-control" placeholder="Nhập lại mật khẩu mới">
+                                </div>
+                            </div>
+
+                            <div class="action-row mt-4">
+                                <a href="#" class="btn btn-success">Lưu thay đổi</a>
+                                <a href="#" class="btn btn-outline-dark">Hủy</a>
+                                <a href="#" class="btn btn-outline-success">Đổi mật khẩu</a>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="manage-card mt-4">
+                        <h3 class="section-heading">Thiết lập tài khoản</h3>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="emailNotify" checked>
+                                    <label class="form-check-label" for="emailNotify">Nhận thông báo qua email</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="showPhone" checked>
+                                    <label class="form-check-label" for="showPhone">Hiển thị số điện thoại khi liên hệ</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="saveHistory" checked>
+                                    <label class="form-check-label" for="saveHistory">Lưu lịch sử tìm kiếm</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="newBikeNotify">
+                                    <label class="form-check-label" for="newBikeNotify">Gửi thông báo khi có xe mới phù hợp</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="manage-card mt-4">
+                        <h3 class="section-heading">Hoạt động gần đây</h3>
+                        <div class="mini-status">
+                            <div class="mini-status-item">
+                                <strong><i class="bi bi-heart-fill text-danger me-2"></i>Đã lưu xe Trek Domane SL 6</strong>
+                                <div class="text-muted mt-1">Bạn vừa thêm mẫu road bike này vào danh sách yêu thích để theo dõi giá.</div>
+                            </div>
+                            <div class="mini-status-item">
+                                <strong><i class="bi bi-eye-fill text-success me-2"></i>Đã xem chi tiết Giant Talon 1</strong>
+                                <div class="text-muted mt-1">Bạn đã mở trang thông tin đầy đủ để xem cấu hình và tình trạng xe.</div>
+                            </div>
+                            <div class="mini-status-item">
+                                <strong><i class="bi bi-chat-left-dots-fill text-primary me-2"></i>Đã liên hệ người bán Cannondale Quick 4</strong>
+                                <div class="text-muted mt-1">Tin nhắn hỏi thêm về lịch sử sử dụng và phụ kiện đi kèm đã được gửi.</div>
+                            </div>
+                            <div class="mini-status-item">
+                                <strong><i class="bi bi-pencil-square text-warning me-2"></i>Cập nhật hồ sơ gần đây</strong>
+                                <div class="text-muted mt-1">Bạn đã chỉnh sửa thông tin liên hệ để người bán phản hồi dễ dàng hơn.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="container">
+            <div class="cta-band">
+                <div class="row align-items-center g-4">
+                    <div class="col-lg-8">
+                        <h2 class="fw-bold mb-2">Khám phá thêm nhiều mẫu xe phù hợp với bạn</h2>
+                        <p class="mb-0">Cập nhật hồ sơ để cá nhân hóa trải nghiệm mua xe trên hệ thống.</p>
+                    </div>
+                    <div class="col-lg-4 d-flex flex-column flex-sm-row gap-3 justify-content-lg-end">
+                        <a href="../bikes.html" class="btn btn-warning text-dark">Xem xe đạp</a>
+                        <a href="favorites.html" class="btn btn-outline-light">Xem xe yêu thích</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer id="contact">
+        <div class="container">
+            <div class="row g-4">
+                <div class="col-lg-4">
+                    <h4 class="fw-bold mb-3">Bike Marketplace</h4>
+                    <p>Nền tảng mua bán xe đạp hiện đại giúp người mua quản lý hồ sơ cá nhân, theo dõi hoạt động và lưu các mẫu xe phù hợp.</p>
+                </div>
+                <div class="col-lg-4">
+                    <h5 class="fw-bold mb-3">Thông tin liên hệ</h5>
+                    <p class="mb-2"><i class="bi bi-geo-alt me-2"></i> 128 Market Street, Ho Chi Minh City</p>
+                    <p class="mb-2"><i class="bi bi-telephone me-2"></i> +84 901 234 567</p>
+                    <p class="mb-0"><i class="bi bi-envelope me-2"></i> hello@bikemarketplace.com</p>
+                </div>
+                <div class="col-lg-4">
+                    <h5 class="fw-bold mb-3">Theo dõi chúng tôi</h5>
+                    <div class="d-flex gap-2 mb-3">
+                        <a class="social-link" href="#" aria-label="Facebook"><i class="bi bi-facebook"></i></a>
+                        <a class="social-link" href="#" aria-label="Instagram"><i class="bi bi-instagram"></i></a>
+                        <a class="social-link" href="#" aria-label="Twitter"><i class="bi bi-twitter-x"></i></a>
+                        <a class="social-link" href="#" aria-label="YouTube"><i class="bi bi-youtube"></i></a>
+                    </div>
+                    <p class="mb-0">Hỗ trợ mỗi ngày từ 8:00 AM đến 8:00 PM dành cho cộng đồng mua bán xe đạp.</p>
+                </div>
+            </div>
+            <div class="border-top border-secondary-subtle mt-4 pt-4 text-center text-white-50">
+                <small>&copy; 2026 Bike Marketplace. Trang hồ sơ cá nhân được xây dựng với HTML, CSS, Bootstrap 5 và Bootstrap Icons.</small>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+</body>
+</html>
