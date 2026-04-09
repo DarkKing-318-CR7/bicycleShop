@@ -1,4 +1,70 @@
-﻿<!DOCTYPE html>
+<?php
+require_once __DIR__ . '/../includes/session.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/functions.php';
+
+if (!isLoggedIn()) {
+    redirect('../login.php');
+}
+
+if (!hasRole('admin')) {
+    redirect('../index.php');
+}
+
+requireRole('admin');
+
+$currentUser = currentUser();
+$adminName = $currentUser['full_name'] ?? 'Quản trị viên';
+
+function getInitials(string $name): string
+{
+    $name = trim($name);
+
+    if ($name === '') {
+        return 'AD';
+    }
+
+    $parts = preg_split('/\s+/', $name);
+    $initials = '';
+
+    foreach ($parts as $part) {
+        if ($part === '') {
+            continue;
+        }
+
+        $initials .= function_exists('mb_substr') ? mb_substr($part, 0, 1, 'UTF-8') : substr($part, 0, 1);
+
+        if (strlen($initials) >= 2) {
+            break;
+        }
+    }
+
+    return strtoupper($initials ?: 'AD');
+}
+
+function fetchCount(mysqli $conn, string $sql, int $fallback = 0): int
+{
+    $result = $conn->query($sql);
+
+    if (!$result) {
+        return $fallback;
+    }
+
+    $row = $result->fetch_assoc();
+
+    return isset($row['total']) ? (int) $row['total'] : $fallback;
+}
+
+$totalUsers = fetchCount($conn, "SELECT COUNT(*) AS total FROM users");
+$totalBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes");
+$pendingBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes WHERE status = 'pending'");
+$totalOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders");
+$totalCategories = fetchCount($conn, "SELECT COUNT(*) AS total FROM categories");
+$totalBrands = fetchCount($conn, "SELECT COUNT(*) AS total FROM brands");
+
+$adminInitials = getInitials($adminName);
+?>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
@@ -25,9 +91,9 @@
                         <button class="admin-icon-btn"><i class="bi bi-bell"></i></button>
                         <button class="admin-icon-btn"><i class="bi bi-chat-dots"></i></button>
                         <div class="d-flex align-items-center gap-2">
-                            <span class="admin-avatar">AD</span>
+                            <span class="admin-avatar"><?= e($adminInitials) ?></span>
                             <div class="small">
-                                <div class="fw-bold">Quản trị viên</div>
+                                <div class="fw-bold"><?= e($adminName) ?></div>
                                 <div class="text-muted">Admin hệ thống</div>
                             </div>
                         </div>
@@ -42,17 +108,17 @@
             <div class="row g-4">
                 <aside class="col-xl-2 col-lg-3">
                     <div class="sidebar-card admin-sidebar">
-                                                <ul class="menu-list">
-                            <li><a class="menu-link active" href="index.html"><i class="bi bi-grid"></i> Tổng quan</a></li>
-                            <li><a class="menu-link" href="bikes.html"><i class="bi bi-card-list"></i> Quản lý tin đăng</a></li>
-                            <li><a class="menu-link" href="users.html"><i class="bi bi-people"></i> Quản lý người dùng</a></li>
-                            <li><a class="menu-link" href="orders.html"><i class="bi bi-receipt"></i> Quản lý đơn mua</a></li>
-                            <li><a class="menu-link" href="categories.html"><i class="bi bi-tags"></i> Danh mục xe</a></li>
-                            <li><a class="menu-link" href="brands.html"><i class="bi bi-award"></i> Thương hiệu</a></li>
-                            <li><a class="menu-link" href="moderation.html"><i class="bi bi-shield-check"></i> Kiểm duyệt</a></li>
-                            <li><a class="menu-link" href="statistics.html"><i class="bi bi-bar-chart"></i> Thống kê</a></li>
-                            <li><a class="menu-link" href="settings.html"><i class="bi bi-gear"></i> Cài đặt</a></li>
-                            <li><a class="menu-link" href="../login.html"><i class="bi bi-box-arrow-right"></i> Đăng xuất</a></li>
+                        <ul class="menu-list">
+                            <li><a class="menu-link active" href="index.php"><i class="bi bi-grid"></i> Tổng quan</a></li>
+                            <li><a class="menu-link" href="bikes.php"><i class="bi bi-card-list"></i> Quản lý tin đăng</a></li>
+                            <li><a class="menu-link" href="users.php"><i class="bi bi-people"></i> Quản lý người dùng</a></li>
+                            <li><a class="menu-link" href="orders.php"><i class="bi bi-receipt"></i> Quản lý đơn mua</a></li>
+                            <li><a class="menu-link" href="categories.php"><i class="bi bi-tags"></i> Danh mục xe</a></li>
+                            <li><a class="menu-link" href="brands.php"><i class="bi bi-award"></i> Thương hiệu</a></li>
+                            <li><a class="menu-link" href="moderation.php"><i class="bi bi-shield-check"></i> Kiểm duyệt</a></li>
+                            <li><a class="menu-link" href="statistics.php"><i class="bi bi-bar-chart"></i> Thống kê</a></li>
+                            <li><a class="menu-link" href="settings.php"><i class="bi bi-gear"></i> Cài đặt</a></li>
+                            <li><a class="menu-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> Đăng xuất</a></li>
                         </ul>
                     </div>
                 </aside>
@@ -65,22 +131,22 @@
 
                     <div class="row g-4 mb-4">
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-card-list"></i></span><div><small>Tổng số tin đăng</small><strong>428</strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-card-list"></i></span><div><small>Tổng số tin đăng</small><strong><?= e(number_format($totalBikes, 0, ',', '.')) ?></strong></div></div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-hourglass-split"></i></span><div><small>Tin đang chờ duyệt</small><strong>12</strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-hourglass-split"></i></span><div><small>Tin đang chờ duyệt</small><strong><?= e(number_format($pendingBikes, 0, ',', '.')) ?></strong></div></div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-people"></i></span><div><small>Người dùng đang hoạt động</small><strong>186</strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-people"></i></span><div><small>Tổng người dùng</small><strong><?= e(number_format($totalUsers, 0, ',', '.')) ?></strong></div></div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-bag-check"></i></span><div><small>Xe đã bán</small><strong>94</strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-bag-check"></i></span><div><small>Tổng đơn mua</small><strong><?= e(number_format($totalOrders, 0, ',', '.')) ?></strong></div></div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-cash-coin"></i></span><div><small>Doanh mục</small><strong>1,24 tỷ</strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-cash-coin"></i></span><div><small>Tổng danh mục</small><strong><?= e(number_format($totalCategories, 0, ',', '.')) ?></strong></div></div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-graph-up-arrow"></i></span><div><small>Lượt truy cập hôm nay</small><strong>2.381</strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-graph-up-arrow"></i></span><div><small>Tổng thương hiệu</small><strong><?= e(number_format($totalBrands, 0, ',', '.')) ?></strong></div></div>
                         </div>
                     </div>
 
@@ -204,10 +270,10 @@
                             <div class="quick-card">
                                 <h2 class="section-heading">Thao tác nhanh</h2>
                                 <div class="quick-grid">
-                                    <a href="bikes.html" class="btn btn-success">Xem tất cả tin đăng</a>
+                                    <a href="bikes.php" class="btn btn-success">Xem tất cả tin đăng</a>
                                     <a href="#" class="btn btn-outline-dark">Duyệt tin mới</a>
-                                    <a href="users.html" class="btn btn-outline-dark">Quản lý người dùng</a>
-                                    <a href="#" class="btn btn-outline-success">Xem báo cáo thống kê</a>
+                                    <a href="users.php" class="btn btn-outline-dark">Quản lý người dùng</a>
+                                    <a href="statistics.php" class="btn btn-outline-success">Xem báo cáo thống kê</a>
                                 </div>
                             </div>
                         </div>
@@ -251,4 +317,3 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
 </html>
-
