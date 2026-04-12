@@ -15,6 +15,45 @@ requireRole('admin');
 
 $currentUser = currentUser();
 $adminName = $currentUser['full_name'] ?? 'Quản trị viên';
+$message = '';
+$messageType = 'success';
+
+if (isset($_GET['msg'])) {
+    if ($_GET['msg'] === 'approved') {
+        $message = 'Đã duyệt tin đăng thành công.';
+    } elseif ($_GET['msg'] === 'rejected') {
+        $message = 'Đã từ chối tin đăng thành công.';
+    }
+}
+
+$message = '';
+$messageType = 'success';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['moderate_bike'])) {
+    $bikeId = (int) ($_POST['bike_id'] ?? 0);
+    $action = $_POST['action_type'] ?? '';
+
+    if ($bikeId > 0 && in_array($action, ['approve', 'reject'], true)) {
+        $newStatus = $action === 'approve' ? 'approved' : 'rejected';
+
+        $stmt = $conn->prepare("UPDATE bikes SET status = ?, updated_at = NOW() WHERE id = ?");
+        $stmt->bind_param("si", $newStatus, $bikeId);
+
+        if ($stmt->execute()) {
+            header('Location: index.php?msg=' . ($action === 'approve' ? 'approved' : 'rejected'));
+            exit;
+        } else {
+            $message = 'Có lỗi xảy ra khi cập nhật trạng thái tin đăng.';
+            $messageType = 'danger';
+        }
+
+        $stmt->close();
+    } else {
+        $message = 'Dữ liệu không hợp lệ.';
+        $messageType = 'danger';
+    }
+}
+
 
 function getInitials(string $name): string
 {
@@ -62,10 +101,43 @@ $totalOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders");
 $totalCategories = fetchCount($conn, "SELECT COUNT(*) AS total FROM categories");
 $totalBrands = fetchCount($conn, "SELECT COUNT(*) AS total FROM brands");
 
+
+$pendingBikeList = [];
+$bikeResult = $conn->query("
+    SELECT 
+        b.id,
+        b.title,
+        b.price,
+        b.location,
+        b.frame_size,
+        b.wheel_size,
+        b.color,
+        b.condition_status,
+        b.description,
+        b.created_at,
+        b.status,
+        u.full_name AS seller_name,
+        u.email AS seller_email,
+        u.phone AS seller_phone
+    FROM bikes b
+    LEFT JOIN users u ON b.seller_id = u.id
+    WHERE b.status = 'pending'
+    ORDER BY b.created_at DESC
+    LIMIT 10
+");
+
+if ($bikeResult) {
+    while ($row = $bikeResult->fetch_assoc()) {
+        $pendingBikeList[] = $row;
+    }
+}
+
+
 $adminInitials = getInitials($adminName);
 ?>
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -77,6 +149,14 @@ $adminInitials = getInitials($adminName);
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="../css/bike-marketplace.css">
 </head>
+
+
+
+
+
+<!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script> -->
+
+
 <body class="admin-dashboard-page">
     <header class="admin-topbar">
         <div class="container-fluid px-3 px-lg-4 py-3">
@@ -128,25 +208,39 @@ $adminInitials = getInitials($adminName);
                     <div class="page-kicker">Bảng điều khiển</div>
                     <h1 class="section-title mb-2">Bảng điều khiển quản trị</h1>
                     <p class="section-subtitle mb-4">Theo dõi hoạt động hệ thống mua bán xe đạp thể thao cũ.</p>
-
+                    <?php if ($message !== ''): ?>
+                        <div class="alert alert-<?= e($messageType) ?>"><?= e($message) ?></div>
+                    <?php endif; ?>
                     <div class="row g-4 mb-4">
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-card-list"></i></span><div><small>Tổng số tin đăng</small><strong><?= e(number_format($totalBikes, 0, ',', '.')) ?></strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-card-list"></i></span>
+                                <div><small>Tổng số tin đăng</small><strong><?= e(number_format($totalBikes, 0, ',', '.')) ?></strong></div>
+                            </div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-hourglass-split"></i></span><div><small>Tin đang chờ duyệt</small><strong><?= e(number_format($pendingBikes, 0, ',', '.')) ?></strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-hourglass-split"></i></span>
+                                <div><small>Tin đang chờ duyệt</small><strong><?= e(number_format($pendingBikes, 0, ',', '.')) ?></strong></div>
+                            </div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-people"></i></span><div><small>Tổng người dùng</small><strong><?= e(number_format($totalUsers, 0, ',', '.')) ?></strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-people"></i></span>
+                                <div><small>Tổng người dùng</small><strong><?= e(number_format($totalUsers, 0, ',', '.')) ?></strong></div>
+                            </div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-bag-check"></i></span><div><small>Tổng đơn mua</small><strong><?= e(number_format($totalOrders, 0, ',', '.')) ?></strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-bag-check"></i></span>
+                                <div><small>Tổng đơn mua</small><strong><?= e(number_format($totalOrders, 0, ',', '.')) ?></strong></div>
+                            </div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-cash-coin"></i></span><div><small>Tổng danh mục</small><strong><?= e(number_format($totalCategories, 0, ',', '.')) ?></strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-cash-coin"></i></span>
+                                <div><small>Tổng danh mục</small><strong><?= e(number_format($totalCategories, 0, ',', '.')) ?></strong></div>
+                            </div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-graph-up-arrow"></i></span><div><small>Tổng thương hiệu</small><strong><?= e(number_format($totalBrands, 0, ',', '.')) ?></strong></div></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-graph-up-arrow"></i></span>
+                                <div><small>Tổng thương hiệu</small><strong><?= e(number_format($totalBrands, 0, ',', '.')) ?></strong></div>
+                            </div>
                         </div>
                     </div>
 
@@ -167,38 +261,50 @@ $adminInitials = getInitials($adminName);
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr>
-                                                <td>Trek Domane SL 6</td>
-                                                <td>Nguyễn Minh</td>
-                                                <td>68.000.000đ</td>
-                                                <td>08/04/2026</td>
-                                                <td><span class="status-badge status-pending">Chờ duyệt</span></td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-success">Duyệt</a><a href="#" class="btn btn-sm btn-outline-dark">Từ chối</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>Scott Addict 30</td>
-                                                <td>Trần Quốc Bảo</td>
-                                                <td>74.000.000đ</td>
-                                                <td>08/04/2026</td>
-                                                <td><span class="status-badge status-approved">Đã duyệt</span></td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-success">Duyệt</a><a href="#" class="btn btn-sm btn-outline-dark">Từ chối</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>Brompton C Line</td>
-                                                <td>Lê Hoàng Nam</td>
-                                                <td>31.500.000đ</td>
-                                                <td>07/04/2026</td>
-                                                <td><span class="status-badge status-rejected">Từ chối</span></td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-success">Duyệt</a><a href="#" class="btn btn-sm btn-outline-dark">Từ chối</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>Cannondale Quick 4</td>
-                                                <td>Phạm Thùy Linh</td>
-                                                <td>18.900.000đ</td>
-                                                <td>07/04/2026</td>
-                                                <td><span class="status-badge status-sold">Đã bán</span></td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-success">Duyệt</a><a href="#" class="btn btn-sm btn-outline-dark">Từ chối</a></div></td>
-                                            </tr>
+                                            <?php if (!empty($pendingBikeList)): ?>
+                                                <?php foreach ($pendingBikeList as $bike): ?>
+                                                    <tr>
+                                                        <td><?= e($bike['title']) ?></td>
+                                                        <td><?= e($bike['seller_name'] ?? 'Không rõ') ?></td>
+                                                        <td><?= e(number_format((float) $bike['price'], 0, ',', '.')) ?>đ</td>
+                                                        <td><?= e(date('d/m/Y', strtotime($bike['created_at']))) ?></td>
+                                                        <td>
+                                                            <span class="status-badge status-pending">Chờ duyệt</span>
+                                                        </td>
+                                                        <td>
+                                                            <div class="d-flex flex-wrap gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    class="btn btn-sm btn-outline-dark"
+                                                                    data-bs-toggle="modal"
+                                                                    data-bs-target="#bikeModal<?= (int) $bike['id'] ?>">
+                                                                    Xem
+                                                                </button>
+
+                                                                <form method="post" class="d-inline">
+                                                                    <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
+                                                                    <input type="hidden" name="action_type" value="approve">
+                                                                    <button type="submit" name="moderate_bike" class="btn btn-sm btn-success">
+                                                                        Duyệt
+                                                                    </button>
+                                                                </form>
+
+                                                                <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn từ chối tin đăng này?');">
+                                                                    <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
+                                                                    <input type="hidden" name="action_type" value="reject">
+                                                                    <button type="submit" name="moderate_bike" class="btn btn-sm btn-outline-danger">
+                                                                        Từ chối
+                                                                    </button>
+                                                                </form>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            <?php else: ?>
+                                                <tr>
+                                                    <td colspan="6" class="text-center text-muted py-4">Hiện không có tin đăng nào đang chờ duyệt.</td>
+                                                </tr>
+                                            <?php endif; ?>
                                         </tbody>
                                     </table>
                                 </div>
@@ -209,9 +315,15 @@ $adminInitials = getInitials($adminName);
                             <div class="content-card">
                                 <h2 class="section-heading">Tổng quan kiểm duyệt</h2>
                                 <div class="mini-status">
-                                    <div class="mini-status-item"><strong>12 tin đang chờ duyệt</strong><div class="text-muted mt-1">Cần xem xét để xuất hiện công khai trên marketplace.</div></div>
-                                    <div class="mini-status-item"><strong>5 tin bị từ chối</strong><div class="text-muted mt-1">Nên kiểm tra lý do và gửi hướng dẫn chỉnh sửa cho người bán.</div></div>
-                                    <div class="mini-status-item"><strong>9 tin được duyệt hôm nay</strong><div class="text-muted mt-1">Khối lượng duyệt hôm nay đang ở mức ổn định.</div></div>
+                                    <div class="mini-status-item"><strong>12 tin đang chờ duyệt</strong>
+                                        <div class="text-muted mt-1">Cần xem xét để xuất hiện công khai trên marketplace.</div>
+                                    </div>
+                                    <div class="mini-status-item"><strong>5 tin bị từ chối</strong>
+                                        <div class="text-muted mt-1">Nên kiểm tra lý do và gửi hướng dẫn chỉnh sửa cho người bán.</div>
+                                    </div>
+                                    <div class="mini-status-item"><strong>9 tin được duyệt hôm nay</strong>
+                                        <div class="text-muted mt-1">Khối lượng duyệt hôm nay đang ở mức ổn định.</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -314,6 +426,91 @@ $adminInitials = getInitials($adminName);
         </div>
     </main>
 
+
+
+
+    <?php if (!empty($pendingBikeList)): ?>
+        <?php foreach ($pendingBikeList as $bike): ?>
+            <div class="modal fade" id="bikeModal<?= (int) $bike['id'] ?>" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Chi tiết tin đăng</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <strong>Tên xe:</strong>
+                                    <div><?= e($bike['title']) ?></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Giá:</strong>
+                                    <div><?= e(number_format((float) $bike['price'], 0, ',', '.')) ?>đ</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Người đăng:</strong>
+                                    <div><?= e($bike['seller_name'] ?? 'Không rõ') ?></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Email:</strong>
+                                    <div><?= e($bike['seller_email'] ?? '') ?></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Số điện thoại:</strong>
+                                    <div><?= e($bike['seller_phone'] ?? '') ?></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Địa điểm:</strong>
+                                    <div><?= e($bike['location'] ?? '') ?></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Frame size:</strong>
+                                    <div><?= e($bike['frame_size'] ?? '') ?></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Wheel size:</strong>
+                                    <div><?= e($bike['wheel_size'] ?? '') ?></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Màu sắc:</strong>
+                                    <div><?= e($bike['color'] ?? '') ?></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Tình trạng:</strong>
+                                    <div><?= e($bike['condition_status'] ?? '') ?></div>
+                                </div>
+                                <div class="col-12">
+                                    <strong>Mô tả:</strong>
+                                    <div class="mt-2"><?= nl2br(e($bike['description'] ?? '')) ?></div>
+                                </div>
+                                <div class="col-12">
+                                    <strong>Ngày đăng:</strong>
+                                    <div><?= e(date('d/m/Y H:i', strtotime($bike['created_at']))) ?></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <form method="post" class="d-inline">
+                                <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
+                                <input type="hidden" name="action_type" value="approve">
+                                <button type="submit" name="moderate_bike" class="btn btn-success">Duyệt</button>
+                            </form>
+
+                            <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn từ chối tin đăng này?');">
+                                <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
+                                <input type="hidden" name="action_type" value="reject">
+                                <button type="submit" name="moderate_bike" class="btn btn-outline-danger">Từ chối</button>
+                            </form>
+
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
+
 </html>
