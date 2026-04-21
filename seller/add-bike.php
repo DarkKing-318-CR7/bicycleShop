@@ -1,5 +1,4 @@
-﻿
-<?php
+﻿<?php
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
@@ -177,6 +176,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['category_id'] = trim($_POST['category_id'] ?? '');
     $formData['price'] = trim($_POST['price'] ?? '');
     $formData['condition_status'] = trim($_POST['condition_status'] ?? 'new');
+    $normalizedPriceInput = str_replace(
+        ['.', ',', 'đ', 'vnđ', 'vnd', ' '],
+        '',
+        mb_strtolower($formData['price'])
+    );
+
+    $normalizedPrice = is_numeric($normalizedPriceInput) ? (int)$normalizedPriceInput : 0;
     $formData['location'] = trim($_POST['location'] ?? '');
     $formData['year'] = trim($_POST['year'] ?? '');
     $formData['frame_size'] = trim($_POST['frame_size'] ?? '');
@@ -206,18 +212,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($formData['price'] === '') {
         $errors[] = 'Vui lòng nhập giá bán.';
-    } elseif (!is_numeric(str_replace([',', '.'], '', $formData['price'])) && !is_numeric($formData['price'])) {
-        $errors[] = 'Giá bán phải là số hợp lệ.';
+    } elseif ($normalizedPrice <= 0) {
+        $errors[] = 'Giá bán phải là số hợp lệ và lớn hơn 0.';
     }
 
     if (!in_array($formData['condition_status'], ['new', 'like_new', 'used'], true)) {
         $formData['condition_status'] = 'used';
     }
 
-    $normalizedPrice = (float) preg_replace('/[^\d.]/', '', str_replace(',', '', $formData['price']));
-    if ($normalizedPrice <= 0) {
-        $errors[] = 'Giá bán phải lớn hơn 0.';
-    }
 
     if ($formData['description'] === '' && $formData['short_description'] === '') {
         $errors[] = 'Vui lòng nhập mô tả cho tin đăng.';
@@ -353,6 +355,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 ?>
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -364,6 +367,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="../css/bike-marketplace.css">
 </head>
+
 <body class="seller-add-page">
     <nav class="navbar navbar-expand-lg fixed-top">
         <div class="container py-2">
@@ -455,7 +459,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <label class="form-label fw-semibold">Giá bán</label>
                                         <div class="input-group">
                                             <span class="input-group-text"><i class="bi bi-cash-stack"></i></span>
-                                            <input type="text" name="price" class="form-control" placeholder="Nhập giá bán dự kiến" value="<?= e($formData['price']) ?>">
+                                            <input
+                                                type="text"
+                                                id="priceInput"
+                                                name="price"
+                                                class="form-control"
+                                                placeholder="Nhập giá bán dự kiến"
+                                                value="<?= e($formData['price']) ?>">
                                         </div>
                                     </div>
                                     <div class="col-md-4">
@@ -692,7 +702,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
     </footer>
+    <script>
+        const priceInput = document.getElementById('priceInput');
 
+        if (priceInput) {
+            priceInput.addEventListener('input', function(e) {
+                let value = e.target.value.replace(/\D/g, '');
+
+                if (value === '') {
+                    e.target.value = '';
+                    return;
+                }
+
+                e.target.value = Number(value).toLocaleString('vi-VN');
+            });
+        }
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
+
 </html>
