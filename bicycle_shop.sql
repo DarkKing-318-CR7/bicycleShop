@@ -20,7 +20,7 @@ CREATE TABLE users (
     phone VARCHAR(30) DEFAULT NULL,
     address VARCHAR(255) DEFAULT NULL,
     avatar VARCHAR(255) DEFAULT NULL,
-    role ENUM('admin','seller','buyer') NOT NULL DEFAULT 'buyer',
+    role ENUM('admin','seller','buyer','inspector') NOT NULL DEFAULT 'buyer',
     status ENUM('active','inactive','banned') NOT NULL DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -90,6 +90,41 @@ CREATE TABLE orders (
     CONSTRAINT fk_orders_bike FOREIGN KEY (bike_id) REFERENCES bikes(id) ON DELETE SET NULL
 );
 
+CREATE TABLE inspection_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    bike_id INT NOT NULL,
+    seller_id INT NOT NULL,
+    inspector_id INT DEFAULT NULL,
+    status ENUM('pending','in_progress','completed','cancelled') NOT NULL DEFAULT 'pending',
+    request_note TEXT DEFAULT NULL,
+    requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_inspection_requests_bike FOREIGN KEY (bike_id) REFERENCES bikes(id) ON DELETE CASCADE,
+    CONSTRAINT fk_inspection_requests_seller FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_inspection_requests_inspector FOREIGN KEY (inspector_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE inspection_reports (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    request_id INT NOT NULL,
+    bike_id INT NOT NULL,
+    inspector_id INT NOT NULL,
+    frame_status ENUM('good','warning','bad') NOT NULL DEFAULT 'good',
+    brake_status ENUM('good','warning','bad') NOT NULL DEFAULT 'good',
+    drivetrain_status ENUM('good','warning','bad') NOT NULL DEFAULT 'good',
+    wheel_status ENUM('good','warning','bad') NOT NULL DEFAULT 'good',
+    overall_status ENUM('approved','needs_service','rejected') NOT NULL DEFAULT 'approved',
+    summary TEXT DEFAULT NULL,
+    evidence_image VARCHAR(255) DEFAULT NULL,
+    inspected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_inspection_report_request (request_id),
+    CONSTRAINT fk_inspection_reports_request FOREIGN KEY (request_id) REFERENCES inspection_requests(id) ON DELETE CASCADE,
+    CONSTRAINT fk_inspection_reports_bike FOREIGN KEY (bike_id) REFERENCES bikes(id) ON DELETE CASCADE,
+    CONSTRAINT fk_inspection_reports_inspector FOREIGN KEY (inspector_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE favorites (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
@@ -144,5 +179,17 @@ INSERT INTO favorites (user_id, bike_id) VALUES
 
 INSERT INTO orders (buyer_id, bike_id, quantity, total_amount, status, shipping_name, shipping_phone, shipping_address, note) VALUES
 (3, 1, 1, 28500000, 'pending', 'Buyer Demo', '0900000003', 'Đà Nẵng', 'Gọi trước khi giao');
+
+INSERT INTO users (full_name, email, password, phone, address, role, status) VALUES
+('Inspector Demo', 'inspector@bike.com', '$2y$12$SoQnONI7M.r7RjVyQWDXW.HVE4CsM15SJaRLhT9j4/JhALzbFuGdK', '0900000004', 'HÃ  Ná»™i', 'inspector', 'active');
+
+INSERT INTO inspection_requests (bike_id, seller_id, inspector_id, status, request_note) VALUES
+(1, 2, 4, 'completed', 'Xe Ä‘Ã£ Ä‘Æ°á»£c giá»­i kiá»ƒm tra tá»•ng thá»ƒ trÆ°á»›c khi bÃ¡n.'),
+(2, 2, 4, 'pending', 'Cáº§n kiá»ƒm tra phanh vÃ  truyá»n Ä‘á»™ng.');
+
+INSERT INTO inspection_reports (
+    request_id, bike_id, inspector_id, frame_status, brake_status, drivetrain_status, wheel_status, overall_status, summary, evidence_image
+) VALUES
+(1, 1, 4, 'good', 'good', 'good', 'warning', 'approved', 'Khung sá»­ dá»¥ng tá»‘t, phanh vÃ  bá»™ truyá»n Ä‘á»™ng á»•n Ä‘á»‹nh. BÃ¡nh sau cÃ³ dáº¥u hiá»‡u hao mÃ²n nháº¹ nhÆ°ng váº«n sá»­ dá»¥ng tá»‘t.', 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80');
 
 SET FOREIGN_KEY_CHECKS = 1;

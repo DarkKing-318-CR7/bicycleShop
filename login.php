@@ -17,6 +17,10 @@ if (isLoggedIn()) {
         redirect('seller/my-bikes.php');
     }
 
+    if ($role === 'inspector') {
+        redirect('inspector/index.php');
+    }
+
     redirect('index.php');
 }
 
@@ -51,6 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($user['role'] === 'seller') {
                     redirect('seller/my-bikes.php');
+                }
+
+                if ($user['role'] === 'inspector') {
+                    redirect('inspector/index.php');
                 }
 
                 redirect('index.php');

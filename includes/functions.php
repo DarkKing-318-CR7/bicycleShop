@@ -26,20 +26,28 @@ function redirect(string $url): void
     exit;
 }
 
+function baseUrl(string $path = ''): string
+{
+    $base = defined('BASE_URL') ? rtrim(BASE_URL, '/') : '';
+    $path = ltrim($path, '/');
+
+    return $base . '/' . $path;
+}
+
 function requireLogin(): void
 {
     if (!isLoggedIn()) {
-        redirect('login.php');
+        redirect(baseUrl('login.php'));
     }
 }
 
 function requireRole(string $role): void
 {
     if (!isLoggedIn()) {
-        redirect('login.php');
+        redirect(baseUrl('login.php'));
     }
 
     if (!hasRole($role)) {
-        redirect('index.php');
+        redirect(baseUrl('index.php'));
     }
 }

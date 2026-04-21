@@ -14,6 +14,7 @@ $bikeId = (int) ($_GET['id'] ?? 0);
 $bike = null;
 $bikeImages = [];
 $relatedBikes = [];
+$inspectionReport = null;
 
 function getUserHomeLink(string $role): string
 {
@@ -23,6 +24,10 @@ function getUserHomeLink(string $role): string
 
     if ($role === 'seller') {
         return 'seller/my-bikes.php';
+    }
+
+    if ($role === 'inspector') {
+        return 'inspector/index.php';
     }
 
     return 'index.php';
@@ -158,6 +163,29 @@ if ($bikeId > 0) {
             $bikeImages[] = $fallbackImage;
         }
 
+        $inspectionSql = "
+            SELECT
+                report.overall_status,
+                report.summary,
+                report.inspected_at,
+                report.evidence_image,
+                inspector.full_name AS inspector_name
+            FROM inspection_reports report
+            LEFT JOIN users inspector ON inspector.id = report.inspector_id
+            WHERE report.bike_id = ?
+            ORDER BY report.inspected_at DESC, report.id DESC
+            LIMIT 1
+        ";
+        $inspectionStmt = $conn->prepare($inspectionSql);
+
+        if ($inspectionStmt) {
+            $inspectionStmt->bind_param('i', $bikeId);
+            $inspectionStmt->execute();
+            $inspectionResult = $inspectionStmt->get_result();
+            $inspectionReport = $inspectionResult ? $inspectionResult->fetch_assoc() : null;
+            $inspectionStmt->close();
+        }
+
         $relatedSql = "
             SELECT
                 b.id,
@@ -283,6 +311,20 @@ $sellerAvatar = normalizeImagePath($bike['seller_avatar'] ?? '', $fallbackSeller
                     <div class="col-lg-5">
                         <div class="detail-panel">
                             <span class="condition-badge"><i class="bi bi-patch-check-fill"></i> <?= e(getConditionLabel((string) ($bike['condition_status'] ?? 'used'))) ?></span>
+                            <?php if ($inspectionReport): ?>
+                                <span class="condition-badge ms-2"><i class="bi bi-shield-check"></i>
+                                    <?php
+                                    $inspectionLabel = 'Đã kiểm định';
+
+                                    if (($inspectionReport['overall_status'] ?? '') === 'needs_service') {
+                                        $inspectionLabel = 'Cần bảo dưỡng';
+                                    } elseif (($inspectionReport['overall_status'] ?? '') === 'rejected') {
+                                        $inspectionLabel = 'Không đạt kiểm định';
+                                    }
+                                    ?>
+                                    <?= e($inspectionLabel) ?>
+                                </span>
+                            <?php endif; ?>
                             <h1 class="bike-title"><?= e($bike['title']) ?></h1>
                             <div class="detail-price"><?= e(formatPriceVnd($bike['price'] ?? 0)) ?></div>
                             <div class="muted"><i class="bi bi-geo-alt"></i> <?= e($bike['location'] ?: 'Đang cập nhật') ?></div>
@@ -322,10 +364,23 @@ $sellerAvatar = normalizeImagePath($bike['seller_avatar'] ?? '', $fallbackSeller
                                 </div>
                             </div>
 
+                            <?php if ($inspectionReport): ?>
+                                <div class="seller-box">
+                                    <div class="d-flex justify-content-between align-items-start gap-3">
+                                        <div>
+                                            <div class="fw-bold">Báo cáo kiểm định</div>
+                                            <div class="seller-badge mt-2"><i class="bi bi-clipboard2-check"></i> <?= e($inspectionReport['inspector_name'] ?: 'Inspector hệ thống') ?></div>
+                                        </div>
+                                        <div class="text-end muted small">Ngày kiểm định: <?= e(formatBikeDate($inspectionReport['inspected_at'] ?? null)) ?></div>
+                                    </div>
+                                    <p class="muted mb-0 mt-3"><?= e($inspectionReport['summary'] ?: 'Xe đã có báo cáo kiểm định từ hệ thống.') ?></p>
+                                </div>
+                            <?php endif; ?>
+
                             <div class="action-grid">
                                 <a href="#seller-information" class="btn btn-outline-dark">Xem hồ sơ người bán</a>
                                 <a href="#contact" class="btn btn-success">Liên hệ người bán</a>
-                                <a href="#" class="btn btn-outline-dark">Lưu vào yêu thích</a>
+                                <a href="toggle-favorite.php?bike_id=<?= e((int) $bike['id']) ?>" class="btn btn-outline-dark">Lưu vào yêu thích</a>
                                 <a href="bikes.php" class="btn btn-warning text-dark">Xem thêm xe khác</a>
                             </div>
                         </div>
@@ -387,6 +442,32 @@ $sellerAvatar = normalizeImagePath($bike['seller_avatar'] ?? '', $fallbackSeller
                                 </div>
                             </div>
                         </div>
+
+                        <?php if ($inspectionReport): ?>
+                            <div class="col-12">
+                                <h2 class="section-heading">Kiểm định hệ thống</h2>
+                                <div class="seller-card">
+                                    <div class="seller-profile">
+                                        <div>
+                                            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                                <h3 class="h5 fw-bold mb-0">Xe đã qua kiểm định</h3>
+                                                <span class="seller-badge"><i class="bi bi-shield-check"></i> <?= e($inspectionReport['inspector_name'] ?: 'Inspector hệ thống') ?></span>
+                                            </div>
+                                            <p class="muted mb-2"><?= e($inspectionReport['summary'] ?: 'Báo cáo kiểm định đang được cập nhật.') ?></p>
+                                            <div class="d-flex flex-column gap-2 muted">
+                                                <span><i class="bi bi-calendar-event me-2"></i> Hoàn tất ngày <?= e(formatBikeDate($inspectionReport['inspected_at'] ?? null)) ?></span>
+                                                <span><i class="bi bi-patch-check me-2"></i> Kết luận: <?= e(($inspectionReport['overall_status'] ?? '') === 'approved' ? 'Đạt kiểm định' : (($inspectionReport['overall_status'] ?? '') === 'needs_service' ? 'Cần bảo dưỡng thêm' : 'Không đạt kiểm định')) ?></span>
+                                            </div>
+                                            <?php if (!empty($inspectionReport['evidence_image'])): ?>
+                                                <div class="mt-3">
+                                                    <img src="<?= e(normalizeImagePath($inspectionReport['evidence_image'], $fallbackImage)) ?>" alt="Ảnh kiểm định" class="img-fluid rounded-4 shadow-sm" style="max-width: 320px;">
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
 
                         <div class="col-12">
                             <h2 class="section-heading">Đánh giá</h2>

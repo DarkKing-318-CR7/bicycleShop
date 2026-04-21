@@ -1,15 +1,7 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
-
-if (!isLoggedIn()) {
-    redirect('../login.php');
-}
-
-if (!hasRole('seller')) {
-    redirect('../index.php');
-}
 
 requireRole('seller');
 
@@ -87,7 +79,7 @@ $sql = "
         SELECT bi.id
         FROM bike_images bi
         WHERE bi.bike_id = b.id
-        ORDER BY bi.is_primary DESC, bi.sort_order ASC, bi.id ASC
+        ORDER BY bi.id ASC
         LIMIT 1
     )
     LEFT JOIN (

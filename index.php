@@ -57,6 +57,10 @@ function getUserHomeLink(string $role): string
         return 'seller/my-bikes.php';
     }
 
+    if ($role === 'inspector') {
+        return 'inspector/index.php';
+    }
+
     return 'index.php';
 }
 
