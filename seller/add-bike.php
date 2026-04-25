@@ -179,7 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $normalizedPriceInput = str_replace(
         ['.', ',', 'đ', 'vnđ', 'vnd', ' '],
         '',
-        mb_strtolower($formData['price'])
+        strtolower($formData['price'])
     );
 
     $normalizedPrice = is_numeric($normalizedPriceInput) ? (int)$normalizedPriceInput : 0;

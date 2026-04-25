@@ -6,14 +6,14 @@ require_once __DIR__ . '/../includes/functions.php';
 requireRole('buyer');
 
 $currentUser = currentUser();
-$buyerId = (int)($currentUser['id'] ?? 0);
+$buyerId = (int) ($currentUser['id'] ?? 0);
 $fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
 
 $keyword = trim($_GET['keyword'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
 $sort = trim($_GET['sort'] ?? 'newest');
 
-$allowedStatuses = ['pending', 'confirmed', 'processing', 'completed', 'cancelled'];
+$allowedStatuses = ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'];
 if (!in_array($statusFilter, $allowedStatuses, true)) {
     $statusFilter = '';
 }
@@ -25,7 +25,7 @@ if (!in_array($sort, $allowedSorts, true)) {
 
 function formatPriceVnd($price): string
 {
-    return number_format((float)$price, 0, ',', '.') . 'đ';
+    return number_format((float) $price, 0, ',', '.') . 'đ';
 }
 
 function formatDateVi(?string $date): string
@@ -47,7 +47,7 @@ function getOrderStatusMeta(string $status): array
     switch ($status) {
         case 'confirmed':
             return ['class' => 'status-approved', 'label' => 'Đã xác nhận'];
-        case 'processing':
+        case 'in_progress':
             return ['class' => 'status-approved', 'label' => 'Đang giao dịch'];
         case 'completed':
             return ['class' => 'status-sold', 'label' => 'Hoàn tất'];
@@ -61,8 +61,14 @@ function getOrderStatusMeta(string $status): array
 
 function buildOrderCode(array $order): string
 {
-    $id = (int)($order['id'] ?? 0);
-    return '#ORD-' . date('Y') . '-' . str_pad((string)$id, 3, '0', STR_PAD_LEFT);
+    $orderCode = trim((string) ($order['order_code'] ?? ''));
+
+    if ($orderCode !== '') {
+        return $orderCode;
+    }
+
+    $id = (int) ($order['id'] ?? 0);
+    return 'ORD-' . date('Y') . '-' . str_pad((string) $id, 3, '0', STR_PAD_LEFT);
 }
 
 $stats = [
@@ -76,7 +82,7 @@ $statsSql = "
     SELECT
         COUNT(*) AS total_orders,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_orders,
-        SUM(CASE WHEN status IN ('confirmed', 'processing') THEN 1 ELSE 0 END) AS confirmed_orders,
+        SUM(CASE WHEN status IN ('confirmed', 'in_progress') THEN 1 ELSE 0 END) AS confirmed_orders,
         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_orders
     FROM orders
     WHERE buyer_id = ?
@@ -91,24 +97,26 @@ if ($statsStmt) {
     $statsStmt->close();
 
     if ($statsRow) {
-        $stats['total'] = (int)($statsRow['total_orders'] ?? 0);
-        $stats['pending'] = (int)($statsRow['pending_orders'] ?? 0);
-        $stats['confirmed'] = (int)($statsRow['confirmed_orders'] ?? 0);
-        $stats['completed'] = (int)($statsRow['completed_orders'] ?? 0);
+        $stats['total'] = (int) ($statsRow['total_orders'] ?? 0);
+        $stats['pending'] = (int) ($statsRow['pending_orders'] ?? 0);
+        $stats['confirmed'] = (int) ($statsRow['confirmed_orders'] ?? 0);
+        $stats['completed'] = (int) ($statsRow['completed_orders'] ?? 0);
     }
 }
 
 $sql = "
     SELECT
         o.id,
+        o.order_code,
         o.bike_id,
-        o.total_price,
+        o.offered_price,
+        o.contact_method,
+        o.meeting_location,
+        o.buyer_note,
+        o.payment_method,
+        o.payment_status,
         o.status,
         o.created_at,
-        o.shipping_name,
-        o.shipping_phone,
-        o.shipping_address,
-        o.note,
         COALESCE(b.title, 'Xe đạp thể thao') AS bike_title,
         COALESCE(b.location, 'Đang cập nhật') AS bike_location,
         COALESCE(c.name, 'Danh mục khác') AS category_name,
@@ -119,7 +127,7 @@ $sql = "
     LEFT JOIN bikes b ON b.id = o.bike_id
     LEFT JOIN categories c ON c.id = b.category_id
     LEFT JOIN brands br ON br.id = b.brand_id
-    LEFT JOIN users s ON s.id = b.seller_id
+    LEFT JOIN users s ON s.id = o.seller_id
     LEFT JOIN bike_images img ON img.id = (
         SELECT bi.id
         FROM bike_images bi
@@ -134,7 +142,7 @@ $params = [$fallbackImage, $buyerId];
 $types = 'si';
 
 if ($keyword !== '') {
-    $sql .= " AND (b.title LIKE ? OR o.id LIKE ?)";
+    $sql .= " AND (b.title LIKE ? OR o.order_code LIKE ?)";
     $likeKeyword = '%' . $keyword . '%';
     $params[] = $likeKeyword;
     $params[] = $likeKeyword;
@@ -152,10 +160,10 @@ switch ($sort) {
         $sql .= " ORDER BY o.created_at ASC, o.id ASC";
         break;
     case 'price_desc':
-        $sql .= " ORDER BY o.total_price DESC, o.created_at DESC";
+        $sql .= " ORDER BY o.offered_price DESC, o.created_at DESC";
         break;
     case 'price_asc':
-        $sql .= " ORDER BY o.total_price ASC, o.created_at DESC";
+        $sql .= " ORDER BY o.offered_price ASC, o.created_at DESC";
         break;
     case 'newest':
     default:
@@ -281,7 +289,7 @@ if ($stmt) {
                         <option value="" <?= $statusFilter === '' ? 'selected' : '' ?>>Tất cả trạng thái</option>
                         <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Chờ xác nhận</option>
                         <option value="confirmed" <?= $statusFilter === 'confirmed' ? 'selected' : '' ?>>Đã xác nhận</option>
-                        <option value="processing" <?= $statusFilter === 'processing' ? 'selected' : '' ?>>Đang giao dịch</option>
+                        <option value="in_progress" <?= $statusFilter === 'in_progress' ? 'selected' : '' ?>>Đang giao dịch</option>
                         <option value="completed" <?= $statusFilter === 'completed' ? 'selected' : '' ?>>Hoàn tất</option>
                         <option value="cancelled" <?= $statusFilter === 'cancelled' ? 'selected' : '' ?>>Đã hủy</option>
                     </select>
@@ -298,9 +306,9 @@ if ($stmt) {
                     <?php if (!empty($orders)): ?>
                         <?php foreach ($orders as $order): ?>
                             <?php
-                            $statusMeta = getOrderStatusMeta((string)($order['status'] ?? 'pending'));
+                            $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                             $orderCode = buildOrderCode($order);
-                            $brandName = trim((string)($order['brand_name'] ?? ''));
+                            $brandName = trim((string) ($order['brand_name'] ?? ''));
                             $categoryLabel = $brandName !== '' ? ($order['category_name'] . ' • ' . $brandName) : $order['category_name'];
                             ?>
                             <article class="listing-item">
@@ -311,7 +319,7 @@ if ($stmt) {
                                         <div class="listing-sub mb-2"><?= e($order['bike_title'] ?? 'Xe đạp thể thao') ?></div>
                                         <div class="listing-meta">
                                             <span><i class="bi bi-person me-1"></i> Người bán: <?= e($order['seller_name'] ?? 'Người bán') ?></span>
-                                            <span><i class="bi bi-cash me-1"></i> <?= e(formatPriceVnd($order['total_price'] ?? 0)) ?></span>
+                                            <span><i class="bi bi-cash me-1"></i> <?= e(formatPriceVnd($order['offered_price'] ?? 0)) ?></span>
                                             <span><i class="bi bi-calendar-event me-1"></i> <?= e(formatDateVi($order['created_at'] ?? null)) ?></span>
                                         </div>
                                     </div>
@@ -322,7 +330,7 @@ if ($stmt) {
                                         </div>
                                     </div>
                                     <div class="listing-actions">
-                                        <a href="order-detail.php?id=<?= e((int)($order['id'] ?? 0)) ?>" class="btn btn-success">Xem chi tiết</a>
+                                        <a href="order-detail.php?id=<?= e((int) ($order['id'] ?? 0)) ?>" class="btn btn-success">Xem chi tiết</a>
                                     </div>
                                 </div>
                             </article>

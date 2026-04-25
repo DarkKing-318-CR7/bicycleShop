@@ -19,38 +19,11 @@ $error = '';
 $success = '';
 
 $formData = [
-    'shipping_name' => '',
-    'shipping_phone' => '',
-    'shipping_address' => '',
-    'note' => '',
+    'contact_method' => 'phone',
+    'meeting_location' => '',
+    'payment_method' => 'cash',
+    'buyer_note' => '',
 ];
-
-$userInfo = [
-    'full_name' => $currentUser['full_name'] ?? '',
-    'phone' => '',
-    'address' => '',
-];
-
-$userSql = "SELECT full_name, phone, address FROM users WHERE id = ? LIMIT 1";
-$userStmt = $conn->prepare($userSql);
-
-if ($userStmt) {
-    $userStmt->bind_param('i', $buyerId);
-    $userStmt->execute();
-    $userResult = $userStmt->get_result();
-    $userRow = $userResult ? $userResult->fetch_assoc() : null;
-    $userStmt->close();
-
-    if ($userRow) {
-        $userInfo['full_name'] = $userRow['full_name'] ?? $userInfo['full_name'];
-        $userInfo['phone'] = $userRow['phone'] ?? '';
-        $userInfo['address'] = $userRow['address'] ?? '';
-    }
-}
-
-$formData['shipping_name'] = $userInfo['full_name'];
-$formData['shipping_phone'] = $userInfo['phone'];
-$formData['shipping_address'] = $userInfo['address'];
 
 $bike = null;
 
@@ -105,45 +78,52 @@ if (in_array($status, ['sold', 'completed'], true)) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $error === '') {
-    $formData['shipping_name'] = trim($_POST['shipping_name'] ?? '');
-    $formData['shipping_phone'] = trim($_POST['shipping_phone'] ?? '');
-    $formData['shipping_address'] = trim($_POST['shipping_address'] ?? '');
-    $formData['note'] = trim($_POST['note'] ?? '');
+    $formData['contact_method'] = trim($_POST['contact_method'] ?? 'phone');
+    $formData['meeting_location'] = trim($_POST['meeting_location'] ?? '');
+    $formData['payment_method'] = trim($_POST['payment_method'] ?? 'cash');
+    $formData['buyer_note'] = trim($_POST['buyer_note'] ?? '');
 
-    if ($formData['shipping_name'] === '') {
-        $error = 'Vui lòng nhập họ và tên người nhận.';
-    } elseif ($formData['shipping_phone'] === '') {
-        $error = 'Vui lòng nhập số điện thoại.';
-    } elseif ($formData['shipping_address'] === '') {
-        $error = 'Vui lòng nhập địa chỉ giao dịch.';
+    if (!in_array($formData['contact_method'], ['phone', 'email', 'chat'], true)) {
+        $error = 'Phương thức liên hệ không hợp lệ.';
+    } elseif ($formData['meeting_location'] === '') {
+        $error = 'Vui lòng nhập địa điểm gặp giao dịch.';
+    } elseif (!in_array($formData['payment_method'], ['cash', 'transfer'], true)) {
+        $error = 'Phương thức thanh toán không hợp lệ.';
     } else {
-        $totalPrice = (float)($bike['price'] ?? 0);
+        $offeredPrice = (float)($bike['price'] ?? 0);
+        $sellerId = (int)($bike['seller_id'] ?? 0);
+        $orderCode = 'ORD-' . date('YmdHis') . '-' . $buyerId;
 
         $insertSql = "
             INSERT INTO orders (
-                buyer_id,
+                order_code,
                 bike_id,
-                total_price,
+                buyer_id,
+                seller_id,
+                offered_price,
+                contact_method,
+                meeting_location,
+                buyer_note,
                 status,
-                shipping_name,
-                shipping_phone,
-                shipping_address,
-                note
-            ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+                payment_method,
+                payment_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'unpaid')
         ";
 
         $insertStmt = $conn->prepare($insertSql);
 
         if ($insertStmt) {
             $insertStmt->bind_param(
-                'iidssss',
-                $buyerId,
+                'siiidssss',
+                $orderCode,
                 $bikeId,
-                $totalPrice,
-                $formData['shipping_name'],
-                $formData['shipping_phone'],
-                $formData['shipping_address'],
-                $formData['note']
+                $buyerId,
+                $sellerId,
+                $offeredPrice,
+                $formData['contact_method'],
+                $formData['meeting_location'],
+                $formData['buyer_note'],
+                $formData['payment_method']
             );
 
             if ($insertStmt->execute()) {
@@ -233,8 +213,8 @@ function formatDateVi(?string $date): string
             <div class="row g-4 align-items-start">
                 <div class="col-lg-7">
                     <div class="auth-card">
-                        <h2 class="auth-title">Thông tin người nhận</h2>
-                        <p class="auth-subtitle">Vui lòng điền chính xác thông tin để người bán có thể liên hệ với bạn nhanh chóng.</p>
+                        <h2 class="auth-title">Thông tin giao dịch</h2>
+                        <p class="auth-subtitle">Vui lòng điền thông tin cần thiết để người bán có thể liên hệ và hẹn gặp với bạn nhanh chóng.</p>
 
                         <?php if ($error !== ''): ?>
                             <div class="alert alert-danger" role="alert">
@@ -252,62 +232,53 @@ function formatDateVi(?string $date): string
                             <input type="hidden" name="bike_id" value="<?= e($bikeId) ?>">
 
                             <div class="mb-3">
-                                <label class="form-label fw-semibold" for="shipping_name">Họ và tên</label>
+                                <label class="form-label fw-semibold" for="contact_method">Phương thức liên hệ</label>
                                 <div class="input-group">
-                                    <span class="input-group-text"><i class="bi bi-person"></i></span>
-                                    <input
-                                        type="text"
-                                        class="form-control"
-                                        id="shipping_name"
-                                        name="shipping_name"
-                                        placeholder="Nhập họ và tên người nhận"
-                                        value="<?= e($formData['shipping_name']) ?>"
-                                        required
-                                    >
+                                    <span class="input-group-text"><i class="bi bi-chat-dots"></i></span>
+                                    <select class="form-select" id="contact_method" name="contact_method" required>
+                                        <option value="phone" <?= $formData['contact_method'] === 'phone' ? 'selected' : '' ?>>Điện thoại</option>
+                                        <option value="email" <?= $formData['contact_method'] === 'email' ? 'selected' : '' ?>>Email</option>
+                                        <option value="chat" <?= $formData['contact_method'] === 'chat' ? 'selected' : '' ?>>Chat</option>
+                                    </select>
                                 </div>
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label fw-semibold" for="shipping_phone">Số điện thoại</label>
-                                <div class="input-group">
-                                    <span class="input-group-text"><i class="bi bi-telephone"></i></span>
-                                    <input
-                                        type="text"
-                                        class="form-control"
-                                        id="shipping_phone"
-                                        name="shipping_phone"
-                                        placeholder="Nhập số điện thoại"
-                                        value="<?= e($formData['shipping_phone']) ?>"
-                                        required
-                                    >
-                                </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold" for="shipping_address">Địa chỉ giao dịch</label>
+                                <label class="form-label fw-semibold" for="meeting_location">Địa điểm gặp giao dịch</label>
                                 <div class="input-group">
                                     <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
                                     <input
                                         type="text"
                                         class="form-control"
-                                        id="shipping_address"
-                                        name="shipping_address"
-                                        placeholder="Nhập địa chỉ giao dịch"
-                                        value="<?= e($formData['shipping_address']) ?>"
+                                        id="meeting_location"
+                                        name="meeting_location"
+                                        placeholder="Nhập địa điểm gặp giao dịch"
+                                        value="<?= e($formData['meeting_location']) ?>"
                                         required
                                     >
                                 </div>
                             </div>
 
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold" for="payment_method">Phương thức thanh toán</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-wallet2"></i></span>
+                                    <select class="form-select" id="payment_method" name="payment_method" required>
+                                        <option value="cash" <?= $formData['payment_method'] === 'cash' ? 'selected' : '' ?>>Tiền mặt</option>
+                                        <option value="transfer" <?= $formData['payment_method'] === 'transfer' ? 'selected' : '' ?>>Chuyển khoản</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             <div class="mb-4">
-                                <label class="form-label fw-semibold" for="note">Ghi chú</label>
+                                <label class="form-label fw-semibold" for="buyer_note">Ghi chú</label>
                                 <textarea
                                     class="form-control"
-                                    id="note"
-                                    name="note"
+                                    id="buyer_note"
+                                    name="buyer_note"
                                     rows="4"
                                     placeholder="Ví dụ: Liên hệ sau 18h, muốn xem xe trước khi chốt..."
-                                ><?= e($formData['note']) ?></textarea>
+                                ><?= e($formData['buyer_note']) ?></textarea>
                             </div>
 
                             <button type="submit" class="btn btn-success w-100">Xác nhận đặt mua</button>
