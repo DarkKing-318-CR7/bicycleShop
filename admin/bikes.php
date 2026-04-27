@@ -112,6 +112,8 @@ if ($categoryResult) {
     }
 }
 
+$viewCountSelect = tableColumnExists($conn, 'bikes', 'view_count') ? 'b.view_count' : '0';
+
 $sql = "
     SELECT 
         b.id,
@@ -120,7 +122,7 @@ $sql = "
         b.location,
         b.status,
         b.created_at,
-        b.view_count,
+        {$viewCountSelect} AS view_count,
         b.description,
         b.frame_size,
         b.wheel_size,

@@ -14,6 +14,7 @@ $bikeId = (int) ($_GET['id'] ?? 0);
 $bike = null;
 $bikeImages = [];
 $relatedBikes = [];
+$sellerAvatarSelect = tableColumnExists($conn, 'users', 'avatar') ? 'u.avatar' : "''";
 
 function getUserHomeLink(string $role): string
 {
@@ -113,7 +114,7 @@ if ($bikeId > 0) {
             u.full_name AS seller_full_name,
             u.email AS seller_email,
             u.phone AS seller_phone,
-            u.avatar AS seller_avatar
+            {$sellerAvatarSelect} AS seller_avatar
         FROM bikes b
         LEFT JOIN categories c ON c.id = b.category_id
         LEFT JOIN brands br ON br.id = b.brand_id
@@ -233,7 +234,7 @@ $sellerAvatar = normalizeImagePath($bike['seller_avatar'] ?? '', $fallbackSeller
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
                     <?php if ($isLoggedIn): ?>
-                        <a href="<?= e($userHomeLink) ?>" class="btn btn-outline-dark"><?= e($userName) ?></a>
+                        <a href="profile.php" class="btn btn-outline-dark"><?= e($userName) ?></a>
                         <a href="logout.php" class="btn btn-success">Đăng xuất</a>
                     <?php else: ?>
                         <a href="login.php" class="btn btn-outline-dark">Đăng nhập</a>

@@ -1,4 +1,3 @@
-﻿
 <?php
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/db.php';
@@ -433,7 +432,8 @@ $previewImage = !empty($bikeImages) ? normalizeImagePath($bikeImages[0]['image_u
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
                     <a href="add-bike.php" class="btn btn-success">Đăng tin mới</a>
-                    <a href="<?= e($userHomeLink) ?>" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
+                    <a href="../profile.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
+                    <a href="../logout.php" class="btn btn-success">Đăng xuất</a>
                 </div>
             </div>
         </div>

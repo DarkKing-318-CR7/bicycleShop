@@ -165,7 +165,8 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
                     <a href="add-bike.php" class="btn btn-success">Đăng tin mới</a>
-                    <a href="../logout.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
+                    <a href="../profile.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
+                    <a href="../logout.php" class="btn btn-success">Đăng xuất</a>
                 </div>
             </div>
         </div>
