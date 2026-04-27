@@ -606,6 +606,10 @@ if ($stmt) {
                         </div>
                         <div class="modal-footer">
                             <?php if (($bike['status'] ?? '') === 'pending'): ?>
+                                <a href="moderation.php?bike_id=<?= (int)$bike['id'] ?>" class="btn btn-outline-dark">
+                                    Xem chi tiết
+                                </a>
+
                                 <form method="post" class="d-inline">
                                     <input type="hidden" name="bike_id" value="<?= (int)$bike['id'] ?>">
                                     <input type="hidden" name="action_type" value="approve">
