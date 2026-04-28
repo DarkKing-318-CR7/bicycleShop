@@ -1,3 +1,156 @@
+<?php
+require_once __DIR__ . '/../includes/session.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/functions.php';
+
+if (!isLoggedIn()) {
+    redirect('../login.php');
+}
+
+if (!hasRole('admin')) {
+    redirect('../index.php');
+}
+
+requireRole('admin');
+
+$currentUser = currentUser();
+$adminName = $currentUser['full_name'] ?? 'Quản trị viên';
+$message = '';
+$messageType = 'success';
+
+function fetchCount(mysqli $conn, string $sql, int $fallback = 0): int
+{
+    $result = $conn->query($sql);
+
+    if (!$result) {
+        return $fallback;
+    }
+
+    $row = $result->fetch_assoc();
+
+    return isset($row['total']) ? (int) $row['total'] : $fallback;
+}
+
+function getInitials(string $name): string
+{
+    $name = trim($name);
+
+    if ($name === '') {
+        return 'AD';
+    }
+
+    $parts = preg_split('/\s+/', $name);
+    $initials = '';
+
+    foreach ($parts as $part) {
+        if ($part === '') {
+            continue;
+        }
+
+        $initials .= function_exists('mb_substr') ? mb_substr($part, 0, 1, 'UTF-8') : substr($part, 0, 1);
+
+        if (strlen($initials) >= 2) {
+            break;
+        }
+    }
+
+    return strtoupper($initials ?: 'AD');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_brand'])) {
+    $brandName = trim($_POST['name'] ?? '');
+
+    if ($brandName === '') {
+        $message = 'Vui lòng nhập tên thương hiệu.';
+        $messageType = 'danger';
+    } else {
+        $stmt = $conn->prepare("INSERT INTO brands (name) VALUES (?)");
+
+        if ($stmt) {
+            $stmt->bind_param("s", $brandName);
+
+            if ($stmt->execute()) {
+                header('Location: brands.php?msg=created');
+                exit;
+            }
+
+            $message = 'Không thể thêm thương hiệu. Tên thương hiệu có thể đã tồn tại.';
+            $messageType = 'danger';
+            $stmt->close();
+        }
+    }
+}
+
+if (isset($_GET['msg']) && $_GET['msg'] === 'created') {
+    $message = 'Đã thêm thương hiệu mới thành công.';
+}
+
+$keyword = trim($_GET['keyword'] ?? '');
+$statusFilter = trim($_GET['status'] ?? '');
+$sortFilter = trim($_GET['sort'] ?? 'latest');
+
+$totalBrands = fetchCount($conn, "SELECT COUNT(*) AS total FROM brands");
+$activeBrands = fetchCount($conn, "SELECT COUNT(*) AS total FROM (SELECT br.id FROM brands br INNER JOIN bikes b ON b.brand_id = br.id GROUP BY br.id) active_brands");
+$popularBrands = fetchCount($conn, "SELECT COUNT(*) AS total FROM (SELECT br.id FROM brands br INNER JOIN bikes b ON b.brand_id = br.id GROUP BY br.id ORDER BY COUNT(b.id) DESC LIMIT 4) popular_brands");
+$brandedBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes WHERE brand_id IS NOT NULL");
+
+$sql = "SELECT br.id, br.name, br.created_at, COUNT(b.id) AS bike_count FROM brands br LEFT JOIN bikes b ON b.brand_id = br.id WHERE 1 = 1";
+$params = [];
+$types = '';
+
+if ($keyword !== '') {
+    $sql .= " AND br.name LIKE ?";
+    $keywordLike = '%' . $keyword . '%';
+    $params[] = $keywordLike;
+    $types .= 's';
+}
+
+$sql .= " GROUP BY br.id, br.name, br.created_at";
+
+if ($statusFilter === 'active') {
+    $sql .= " HAVING bike_count > 0";
+} elseif ($statusFilter === 'hidden') {
+    $sql .= " HAVING bike_count = 0";
+}
+
+switch ($sortFilter) {
+    case 'oldest':
+        $sql .= " ORDER BY br.created_at ASC";
+        break;
+    case 'name_asc':
+        $sql .= " ORDER BY br.name ASC";
+        break;
+    case 'name_desc':
+        $sql .= " ORDER BY br.name DESC";
+        break;
+    case 'posts_desc':
+        $sql .= " ORDER BY bike_count DESC, br.name ASC";
+        break;
+    default:
+        $sql .= " ORDER BY br.created_at DESC";
+        break;
+}
+
+$brandList = [];
+$stmt = $conn->prepare($sql);
+
+if ($stmt) {
+    if (!empty($params)) {
+        $stmt->bind_param($types, ...$params);
+    }
+
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    while ($row = $result->fetch_assoc()) {
+        $brandList[] = $row;
+    }
+
+    $stmt->close();
+}
+
+$adminInitials = getInitials($adminName);
+?>
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -20,14 +173,14 @@
                     <div class="brand-title">Bike Marketplace Admin</div>
                 </div>
                 <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-3 w-100 justify-content-lg-end">
-                    <input type="text" class="form-control admin-search" style="max-width: 320px;" placeholder="Tìm kiếm thương hiệu, quốc gia, trạng thái">
+                    <input type="text" class="form-control admin-search" style="max-width: 320px;" placeholder="Tìm kiếm thương hiệu, trạng thái">
                     <div class="d-flex align-items-center gap-2">
                         <button class="admin-icon-btn" type="button"><i class="bi bi-bell"></i></button>
                         <button class="admin-icon-btn" type="button"><i class="bi bi-chat-dots"></i></button>
                         <div class="d-flex align-items-center gap-2">
-                            <span class="admin-avatar">AD</span>
+                            <span class="admin-avatar"><?= e($adminInitials) ?></span>
                             <div class="small">
-                                <div class="fw-bold">Quản trị viên</div>
+                                <div class="fw-bold"><?= e($adminName) ?></div>
                                 <div class="text-muted">Admin hệ thống</div>
                             </div>
                         </div>
@@ -62,30 +215,33 @@
                     <div class="page-kicker">Thương hiệu hệ thống</div>
                     <h1 class="section-title mb-2">Quản lý thương hiệu xe</h1>
                     <p class="section-subtitle mb-4">Thêm, chỉnh sửa và quản lý các thương hiệu xe đạp trên hệ thống.</p>
+                    <?php if ($message !== ''): ?>
+                        <div class="alert alert-<?= e($messageType) ?>"><?= e($message) ?></div>
+                    <?php endif; ?>
 
                     <div class="row g-4 mb-4">
                         <div class="col-sm-6 col-xl-3">
                             <div class="stats-card">
                                 <span class="stats-icon"><i class="bi bi-award"></i></span>
-                                <div><small>Tổng số thương hiệu</small><strong>10</strong></div>
+                                <div><small>Tổng số thương hiệu</small><strong><?= e(number_format($totalBrands, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                         <div class="col-sm-6 col-xl-3">
                             <div class="stats-card">
                                 <span class="stats-icon"><i class="bi bi-patch-check"></i></span>
-                                <div><small>Thương hiệu đang hoạt động</small><strong>9</strong></div>
+                                <div><small>Thương hiệu đang hoạt động</small><strong><?= e(number_format($activeBrands, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                         <div class="col-sm-6 col-xl-3">
                             <div class="stats-card">
                                 <span class="stats-icon"><i class="bi bi-stars"></i></span>
-                                <div><small>Thương hiệu phổ biến</small><strong>4</strong></div>
+                                <div><small>Thương hiệu phổ biến</small><strong><?= e(number_format($popularBrands, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                         <div class="col-sm-6 col-xl-3">
                             <div class="stats-card">
                                 <span class="stats-icon"><i class="bi bi-collection"></i></span>
-                                <div><small>Số tin đăng theo thương hiệu</small><strong>428</strong></div>
+                                <div><small>Số tin đăng theo thương hiệu</small><strong><?= e(number_format($brandedBikes, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                     </div>
@@ -97,30 +253,31 @@
                                     <h2 class="section-heading mb-1">Bộ lọc thương hiệu</h2>
                                     <p class="text-muted mb-0">Theo dõi và cập nhật danh sách thương hiệu để việc lọc xe đạp chính xác hơn.</p>
                                 </div>
-                                <a href="#" class="btn btn-success"><i class="bi bi-plus-circle me-2"></i>Thêm thương hiệu</a>
+                                <a href="#add-brand-form" class="btn btn-success"><i class="bi bi-plus-circle me-2"></i>Thêm thương hiệu</a>
                             </div>
-                            <form>
+                            <form method="get">
                                 <div class="row g-3">
                                     <div class="col-xl-5 col-md-6">
-                                        <input type="text" class="form-control" placeholder="Tìm theo tên thương hiệu">
+                                        <input type="text" name="keyword" class="form-control" placeholder="Tìm theo tên thương hiệu" value="<?= e($keyword) ?>">
                                     </div>
                                     <div class="col-xl-2 col-md-6">
-                                        <select class="form-select">
-                                            <option>Tất cả trạng thái</option>
-                                            <option>Đang hoạt động</option>
-                                            <option>Tạm ẩn</option>
+                                        <select name="status" class="form-select">
+                                            <option value="">Tất cả trạng thái</option>
+                                            <option value="active" <?= $statusFilter === 'active' ? 'selected' : '' ?>>Đang hoạt động</option>
+                                            <option value="hidden" <?= $statusFilter === 'hidden' ? 'selected' : '' ?>>Tạm ẩn</option>
                                         </select>
                                     </div>
                                     <div class="col-xl-3 col-md-6">
-                                        <select class="form-select">
-                                            <option>Mới nhất</option>
-                                            <option>Cũ nhất</option>
-                                            <option>Tên A-Z</option>
-                                            <option>Tên Z-A</option>
+                                        <select name="sort" class="form-select">
+                                            <option value="latest" <?= $sortFilter === 'latest' ? 'selected' : '' ?>>Mới nhất</option>
+                                            <option value="oldest" <?= $sortFilter === 'oldest' ? 'selected' : '' ?>>Cũ nhất</option>
+                                            <option value="name_asc" <?= $sortFilter === 'name_asc' ? 'selected' : '' ?>>Tên A-Z</option>
+                                            <option value="name_desc" <?= $sortFilter === 'name_desc' ? 'selected' : '' ?>>Tên Z-A</option>
+                                            <option value="posts_desc" <?= $sortFilter === 'posts_desc' ? 'selected' : '' ?>>Nhiều tin nhất</option>
                                         </select>
                                     </div>
                                     <div class="col-xl-2 col-md-6 d-grid">
-                                        <button type="button" class="btn btn-outline-success"><i class="bi bi-funnel me-2"></i>Lọc</button>
+                                        <button type="submit" class="btn btn-outline-success"><i class="bi bi-funnel me-2"></i>Lọc</button>
                                     </div>
                                 </div>
                             </form>
@@ -135,7 +292,7 @@
                                         <h2 class="section-heading mb-1">Danh sách thương hiệu</h2>
                                         <p class="text-muted mb-0">Quản lý các thương hiệu xe đang được sử dụng trên Bike Marketplace.</p>
                                     </div>
-                                    <div class="text-muted small">Hiển thị 1-10 trong 10 thương hiệu</div>
+                                    <div class="text-muted small">Hiển thị <?= count($brandList) > 0 ? '1-' . count($brandList) : '0' ?> trong <?= e(number_format($totalBrands, 0, ',', '.')) ?> thương hiệu</div>
                                 </div>
                                 <div class="table-wrap">
                                     <table>
@@ -143,7 +300,7 @@
                                             <tr>
                                                 <th>STT</th>
                                                 <th>Tên thương hiệu</th>
-                                                <th>Quốc gia</th>
+                                                <th>Mã thương hiệu</th>
                                                 <th>Số tin đăng</th>
                                                 <th>Trạng thái</th>
                                                 <th>Ngày tạo</th>
@@ -151,96 +308,28 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr>
-                                                <td>01</td>
-                                                <td>Trek</td>
-                                                <td>Hoa Kỳ</td>
-                                                <td>48</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>02/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>02</td>
-                                                <td>Giant</td>
-                                                <td>Đài Loan</td>
-                                                <td>44</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>03/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>03</td>
-                                                <td>Specialized</td>
-                                                <td>Hoa Kỳ</td>
-                                                <td>39</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>04/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>04</td>
-                                                <td>Cannondale</td>
-                                                <td>Hoa Kỳ</td>
-                                                <td>35</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>05/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>05</td>
-                                                <td>Scott</td>
-                                                <td>Thụy Sĩ</td>
-                                                <td>29</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>06/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>06</td>
-                                                <td>Brompton</td>
-                                                <td>Vương quốc Anh</td>
-                                                <td>18</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>07/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>07</td>
-                                                <td>Marin</td>
-                                                <td>Hoa Kỳ</td>
-                                                <td>16</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>08/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>08</td>
-                                                <td>Polygon</td>
-                                                <td>Indonesia</td>
-                                                <td>21</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>09/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>09</td>
-                                                <td>Liv</td>
-                                                <td>Đài Loan</td>
-                                                <td>14</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>10/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>10</td>
-                                                <td>Merida</td>
-                                                <td>Đài Loan</td>
-                                                <td>12</td>
-                                                <td><span class="status-badge status-rejected">Tạm ẩn</span></td>
-                                                <td>11/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
+                                            <?php if (!empty($brandList)): ?>
+                                                <?php foreach ($brandList as $index => $brand): ?>
+                                                    <?php
+                                                    $bikeCount = (int) ($brand['bike_count'] ?? 0);
+                                                    $statusText = $bikeCount > 0 ? 'Đang hoạt động' : 'Tạm ẩn';
+                                                    $statusClass = $bikeCount > 0 ? 'status-approved' : 'status-rejected';
+                                                    ?>
+                                                    <tr>
+                                                        <td><?= e(str_pad((string) ($index + 1), 2, '0', STR_PAD_LEFT)) ?></td>
+                                                        <td><?= e($brand['name']) ?></td>
+                                                        <td>#<?= e((string) $brand['id']) ?></td>
+                                                        <td><?= e(number_format($bikeCount, 0, ',', '.')) ?></td>
+                                                        <td><span class="status-badge <?= e($statusClass) ?>"><?= e($statusText) ?></span></td>
+                                                        <td><?= e(date('d/m/Y', strtotime($brand['created_at']))) ?></td>
+                                                        <td><div class="d-flex flex-wrap gap-2"><a href="bikes.php?brand_id=<?= (int) $brand['id'] ?>" class="btn btn-sm btn-outline-dark">Xem</a></div></td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            <?php else: ?>
+                                                <tr>
+                                                    <td colspan="7" class="text-center text-muted py-4">Không có thương hiệu phù hợp.</td>
+                                                </tr>
+                                            <?php endif; ?>
                                         </tbody>
                                     </table>
                                 </div>
@@ -248,29 +337,14 @@
                         </div>
 
                         <div class="col-xl-4">
-                            <div class="content-card mb-4">
+                            <div class="content-card mb-4" id="add-brand-form">
                                 <h2 class="section-heading">Thêm thương hiệu mới</h2>
-                                <form class="d-flex flex-column gap-3">
+                                <form method="post" class="d-flex flex-column gap-3">
                                     <div>
                                         <label class="form-label">Tên thương hiệu</label>
-                                        <input type="text" class="form-control" placeholder="Ví dụ: Bianchi">
+                                        <input type="text" name="name" class="form-control" placeholder="Ví dụ: Bianchi" required>
                                     </div>
-                                    <div>
-                                        <label class="form-label">Quốc gia</label>
-                                        <input type="text" class="form-control" placeholder="Ví dụ: Ý">
-                                    </div>
-                                    <div>
-                                        <label class="form-label">Mô tả ngắn</label>
-                                        <textarea class="form-control" rows="4" placeholder="Mô tả ngắn gọn về thương hiệu và định hướng sản phẩm"></textarea>
-                                    </div>
-                                    <div>
-                                        <label class="form-label">Trạng thái</label>
-                                        <select class="form-select">
-                                            <option>Đang hoạt động</option>
-                                            <option>Tạm ẩn</option>
-                                        </select>
-                                    </div>
-                                    <button type="button" class="btn btn-success w-100">Lưu thương hiệu</button>
+                                    <button type="submit" name="add_brand" class="btn btn-success w-100">Lưu thương hiệu</button>
                                 </form>
                             </div>
 
@@ -280,7 +354,7 @@
                                     <div class="mini-status-item"><strong>Tên thương hiệu nên chính xác</strong><div class="text-muted mt-1">Giữ đúng cách viết để tránh nhầm lẫn khi người dùng tìm kiếm sản phẩm.</div></div>
                                     <div class="mini-status-item"><strong>Tránh tạo trùng thương hiệu</strong><div class="text-muted mt-1">Nên kiểm tra danh sách hiện có trước khi thêm mới để tránh phân mảnh dữ liệu.</div></div>
                                     <div class="mini-status-item"><strong>Thương hiệu hỗ trợ lọc tốt hơn</strong><div class="text-muted mt-1">Thông tin thương hiệu rõ ràng giúp trang listing và bộ lọc chính xác hơn.</div></div>
-                                    <div class="mini-status-item"><strong>Có thể thêm quốc gia</strong><div class="text-muted mt-1">Nguồn gốc thương hiệu giúp tăng độ tin cậy và hỗ trợ hiển thị thông tin đầy đủ.</div></div>
+                                    <div class="mini-status-item"><strong>Theo dõi thương hiệu chưa có tin</strong><div class="text-muted mt-1">Các thương hiệu chưa được gán cho tin đăng sẽ được xem như tạm ẩn trên trang quản trị.</div></div>
                                 </div>
                             </div>
                         </div>
@@ -290,9 +364,7 @@
                         <ul class="pagination justify-content-center mb-0">
                             <li class="page-item disabled"><a class="page-link" href="#">Trước</a></li>
                             <li class="page-item active"><a class="page-link" href="#">1</a></li>
-                            <li class="page-item"><a class="page-link" href="#">2</a></li>
-                            <li class="page-item"><a class="page-link" href="#">3</a></li>
-                            <li class="page-item"><a class="page-link" href="#">Sau</a></li>
+                            <li class="page-item disabled"><a class="page-link" href="#">Sau</a></li>
                         </ul>
                     </nav>
 

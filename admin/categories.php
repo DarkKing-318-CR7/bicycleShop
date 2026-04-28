@@ -1,3 +1,204 @@
+<?php
+require_once __DIR__ . '/../includes/session.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/functions.php';
+
+if (!isLoggedIn()) {
+    redirect('../login.php');
+}
+
+if (!hasRole('admin')) {
+    redirect('../index.php');
+}
+
+requireRole('admin');
+
+$currentUser = currentUser();
+$adminName = $currentUser['full_name'] ?? 'Quản trị viên';
+$message = '';
+$messageType = 'success';
+
+function fetchCount(mysqli $conn, string $sql, int $fallback = 0): int
+{
+    $result = $conn->query($sql);
+
+    if (!$result) {
+        return $fallback;
+    }
+
+    $row = $result->fetch_assoc();
+
+    return isset($row['total']) ? (int) $row['total'] : $fallback;
+}
+
+function getInitials(string $name): string
+{
+    $name = trim($name);
+
+    if ($name === '') {
+        return 'AD';
+    }
+
+    $parts = preg_split('/\s+/', $name);
+    $initials = '';
+
+    foreach ($parts as $part) {
+        if ($part === '') {
+            continue;
+        }
+
+        $initials .= function_exists('mb_substr') ? mb_substr($part, 0, 1, 'UTF-8') : substr($part, 0, 1);
+
+        if (strlen($initials) >= 2) {
+            break;
+        }
+    }
+
+    return strtoupper($initials ?: 'AD');
+}
+
+function makeSlug(string $value): string
+{
+    if (function_exists('iconv')) {
+        $converted = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+        if ($converted !== false) {
+            $value = $converted;
+        }
+    }
+
+    $value = strtolower(trim($value));
+    $value = preg_replace('/[^a-z0-9]+/', '-', $value);
+    $value = trim((string) $value, '-');
+
+    return $value !== '' ? $value : 'danh-muc';
+}
+
+function uniqueCategorySlug(mysqli $conn, string $name): string
+{
+    $baseSlug = makeSlug($name);
+    $slug = $baseSlug;
+    $index = 2;
+    $stmt = $conn->prepare("SELECT id FROM categories WHERE slug = ? LIMIT 1");
+
+    if (!$stmt) {
+        return $slug;
+    }
+
+    while (true) {
+        $stmt->bind_param("s", $slug);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($result->num_rows === 0) {
+            break;
+        }
+
+        $slug = $baseSlug . '-' . $index;
+        $index++;
+    }
+
+    $stmt->close();
+
+    return $slug;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_category'])) {
+    $categoryName = trim($_POST['name'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+
+    if ($categoryName === '') {
+        $message = 'Vui lòng nhập tên danh mục.';
+        $messageType = 'danger';
+    } else {
+        $slug = uniqueCategorySlug($conn, $categoryName);
+        $stmt = $conn->prepare("INSERT INTO categories (name, slug, description) VALUES (?, ?, ?)");
+
+        if ($stmt) {
+            $stmt->bind_param("sss", $categoryName, $slug, $description);
+
+            if ($stmt->execute()) {
+                header('Location: categories.php?msg=created');
+                exit;
+            }
+
+            $message = 'Không thể thêm danh mục. Vui lòng thử lại.';
+            $messageType = 'danger';
+            $stmt->close();
+        }
+    }
+}
+
+if (isset($_GET['msg']) && $_GET['msg'] === 'created') {
+    $message = 'Đã thêm danh mục mới thành công.';
+}
+
+$keyword = trim($_GET['keyword'] ?? '');
+$statusFilter = trim($_GET['status'] ?? '');
+$sortFilter = trim($_GET['sort'] ?? 'latest');
+
+$totalCategories = fetchCount($conn, "SELECT COUNT(*) AS total FROM categories");
+$activeCategories = fetchCount($conn, "SELECT COUNT(*) AS total FROM (SELECT c.id FROM categories c INNER JOIN bikes b ON b.category_id = c.id GROUP BY c.id) active_categories");
+$featuredCategories = fetchCount($conn, "SELECT COUNT(*) AS total FROM (SELECT c.id FROM categories c INNER JOIN bikes b ON b.category_id = c.id GROUP BY c.id ORDER BY COUNT(b.id) DESC LIMIT 3) featured_categories");
+$categorizedBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes WHERE category_id IS NOT NULL");
+
+$sql = "SELECT c.id, c.name, c.slug, c.description, c.created_at, COUNT(b.id) AS bike_count FROM categories c LEFT JOIN bikes b ON b.category_id = c.id WHERE 1 = 1";
+$params = [];
+$types = '';
+
+if ($keyword !== '') {
+    $sql .= " AND (c.name LIKE ? OR c.description LIKE ?)";
+    $keywordLike = '%' . $keyword . '%';
+    $params[] = $keywordLike;
+    $params[] = $keywordLike;
+    $types .= 'ss';
+}
+
+$sql .= " GROUP BY c.id, c.name, c.slug, c.description, c.created_at";
+
+if ($statusFilter === 'active') {
+    $sql .= " HAVING bike_count > 0";
+} elseif ($statusFilter === 'hidden') {
+    $sql .= " HAVING bike_count = 0";
+}
+
+switch ($sortFilter) {
+    case 'oldest':
+        $sql .= " ORDER BY c.created_at ASC";
+        break;
+    case 'name_asc':
+        $sql .= " ORDER BY c.name ASC";
+        break;
+    case 'name_desc':
+        $sql .= " ORDER BY c.name DESC";
+        break;
+    case 'posts_desc':
+        $sql .= " ORDER BY bike_count DESC, c.name ASC";
+        break;
+    default:
+        $sql .= " ORDER BY c.created_at DESC";
+        break;
+}
+
+$categoryList = [];
+$stmt = $conn->prepare($sql);
+
+if ($stmt) {
+    if (!empty($params)) {
+        $stmt->bind_param($types, ...$params);
+    }
+
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    while ($row = $result->fetch_assoc()) {
+        $categoryList[] = $row;
+    }
+
+    $stmt->close();
+}
+
+$adminInitials = getInitials($adminName);
+?>
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -25,9 +226,9 @@
                         <button class="admin-icon-btn" type="button"><i class="bi bi-bell"></i></button>
                         <button class="admin-icon-btn" type="button"><i class="bi bi-chat-dots"></i></button>
                         <div class="d-flex align-items-center gap-2">
-                            <span class="admin-avatar">AD</span>
+                            <span class="admin-avatar"><?= e($adminInitials) ?></span>
                             <div class="small">
-                                <div class="fw-bold">Quản trị viên</div>
+                                <div class="fw-bold"><?= e($adminName) ?></div>
                                 <div class="text-muted">Admin hệ thống</div>
                             </div>
                         </div>
@@ -62,30 +263,33 @@
                     <div class="page-kicker">Danh mục hệ thống</div>
                     <h1 class="section-title mb-2">Quản lý danh mục xe</h1>
                     <p class="section-subtitle mb-4">Thêm, chỉnh sửa và quản lý các danh mục xe đạp trên hệ thống.</p>
+                    <?php if ($message !== ''): ?>
+                        <div class="alert alert-<?= e($messageType) ?>"><?= e($message) ?></div>
+                    <?php endif; ?>
 
                     <div class="row g-4 mb-4">
                         <div class="col-sm-6 col-xl-3">
                             <div class="stats-card">
                                 <span class="stats-icon"><i class="bi bi-tags"></i></span>
-                                <div><small>Tổng số danh mục</small><strong>8</strong></div>
+                                <div><small>Tổng số danh mục</small><strong><?= e(number_format($totalCategories, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                         <div class="col-sm-6 col-xl-3">
                             <div class="stats-card">
                                 <span class="stats-icon"><i class="bi bi-check-circle"></i></span>
-                                <div><small>Danh mục đang hoạt động</small><strong>7</strong></div>
+                                <div><small>Danh mục đang hoạt động</small><strong><?= e(number_format($activeCategories, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                         <div class="col-sm-6 col-xl-3">
                             <div class="stats-card">
                                 <span class="stats-icon"><i class="bi bi-stars"></i></span>
-                                <div><small>Danh mục nổi bật</small><strong>3</strong></div>
+                                <div><small>Danh mục nổi bật</small><strong><?= e(number_format($featuredCategories, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                         <div class="col-sm-6 col-xl-3">
                             <div class="stats-card">
                                 <span class="stats-icon"><i class="bi bi-diagram-3"></i></span>
-                                <div><small>Số tin đăng theo danh mục</small><strong>428</strong></div>
+                                <div><small>Số tin đăng theo danh mục</small><strong><?= e(number_format($categorizedBikes, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                     </div>
@@ -97,30 +301,31 @@
                                     <h2 class="section-heading mb-1">Bộ lọc danh mục</h2>
                                     <p class="text-muted mb-0">Theo dõi trạng thái và sắp xếp danh mục để quản trị hệ thống dễ dàng hơn.</p>
                                 </div>
-                                <a href="#" class="btn btn-success"><i class="bi bi-plus-circle me-2"></i>Thêm danh mục</a>
+                                <a href="#add-category-form" class="btn btn-success"><i class="bi bi-plus-circle me-2"></i>Thêm danh mục</a>
                             </div>
-                            <form>
+                            <form method="get">
                                 <div class="row g-3">
                                     <div class="col-xl-5 col-md-6">
-                                        <input type="text" class="form-control" placeholder="Tìm theo tên danh mục">
+                                        <input type="text" name="keyword" class="form-control" placeholder="Tìm theo tên danh mục" value="<?= e($keyword) ?>">
                                     </div>
                                     <div class="col-xl-2 col-md-6">
-                                        <select class="form-select">
-                                            <option>Tất cả trạng thái</option>
-                                            <option>Đang hoạt động</option>
-                                            <option>Tạm ẩn</option>
+                                        <select name="status" class="form-select">
+                                            <option value="">Tất cả trạng thái</option>
+                                            <option value="active" <?= $statusFilter === 'active' ? 'selected' : '' ?>>Đang hoạt động</option>
+                                            <option value="hidden" <?= $statusFilter === 'hidden' ? 'selected' : '' ?>>Tạm ẩn</option>
                                         </select>
                                     </div>
                                     <div class="col-xl-3 col-md-6">
-                                        <select class="form-select">
-                                            <option>Mới nhất</option>
-                                            <option>Cũ nhất</option>
-                                            <option>Tên A-Z</option>
-                                            <option>Tên Z-A</option>
+                                        <select name="sort" class="form-select">
+                                            <option value="latest" <?= $sortFilter === 'latest' ? 'selected' : '' ?>>Mới nhất</option>
+                                            <option value="oldest" <?= $sortFilter === 'oldest' ? 'selected' : '' ?>>Cũ nhất</option>
+                                            <option value="name_asc" <?= $sortFilter === 'name_asc' ? 'selected' : '' ?>>Tên A-Z</option>
+                                            <option value="name_desc" <?= $sortFilter === 'name_desc' ? 'selected' : '' ?>>Tên Z-A</option>
+                                            <option value="posts_desc" <?= $sortFilter === 'posts_desc' ? 'selected' : '' ?>>Nhiều tin nhất</option>
                                         </select>
                                     </div>
                                     <div class="col-xl-2 col-md-6 d-grid">
-                                        <button type="button" class="btn btn-outline-success"><i class="bi bi-funnel me-2"></i>Lọc</button>
+                                        <button type="submit" class="btn btn-outline-success"><i class="bi bi-funnel me-2"></i>Lọc</button>
                                     </div>
                                 </div>
                             </form>
@@ -133,9 +338,9 @@
                                 <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-3">
                                     <div>
                                         <h2 class="section-heading mb-1">Danh sách danh mục</h2>
-                                        <p class="text-muted mb-0">Quản lý 8 danh mục xe chính đang hiển thị trên marketplace.</p>
+                                        <p class="text-muted mb-0">Quản lý danh mục xe đang có trong database.</p>
                                     </div>
-                                    <div class="text-muted small">Hiển thị 1-8 trong 8 danh mục</div>
+                                    <div class="text-muted small">Hiển thị <?= count($categoryList) > 0 ? '1-' . count($categoryList) : '0' ?> trong <?= e(number_format($totalCategories, 0, ',', '.')) ?> danh mục</div>
                                 </div>
                                 <div class="table-wrap">
                                     <table>
@@ -151,78 +356,28 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr>
-                                                <td>01</td>
-                                                <td>Road Bike</td>
-                                                <td>Dòng xe đạp thể thao tối ưu cho tốc độ và đường nhựa.</td>
-                                                <td>96</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>02/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>02</td>
-                                                <td>Mountain Bike</td>
-                                                <td>Phù hợp leo dốc, địa hình gồ ghề và đường trail.</td>
-                                                <td>84</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>03/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>03</td>
-                                                <td>Touring</td>
-                                                <td>Xe đạp dành cho những chuyến đi dài và đa dụng.</td>
-                                                <td>41</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>04/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>04</td>
-                                                <td>Fixed Gear</td>
-                                                <td>Phong cách tối giản, phù hợp di chuyển trong đô thị.</td>
-                                                <td>27</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>05/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>05</td>
-                                                <td>City Bike</td>
-                                                <td>Thiết kế thân thiện cho việc đi lại hàng ngày trong thành phố.</td>
-                                                <td>72</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>06/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>06</td>
-                                                <td>E-Bike</td>
-                                                <td>Xe đạp điện hỗ trợ trợ lực cho nhu cầu di chuyển linh hoạt.</td>
-                                                <td>38</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>07/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>07</td>
-                                                <td>Gravel Bike</td>
-                                                <td>Kết hợp tốc độ và khả năng chạy tốt trên nhiều bề mặt đường.</td>
-                                                <td>45</td>
-                                                <td><span class="status-badge status-approved">Đang hoạt động</span></td>
-                                                <td>08/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
-                                            <tr>
-                                                <td>08</td>
-                                                <td>Kids Bike</td>
-                                                <td>Dòng xe dành cho trẻ em với kích thước và cấu hình phù hợp.</td>
-                                                <td>25</td>
-                                                <td><span class="status-badge status-rejected">Tạm ẩn</span></td>
-                                                <td>09/01/2026</td>
-                                                <td><div class="d-flex flex-wrap gap-2"><a href="#" class="btn btn-sm btn-outline-dark">Xem</a><a href="#" class="btn btn-sm btn-outline-success">Sửa</a><a href="#" class="btn btn-sm btn-outline-dark">Ẩn</a><a href="#" class="btn btn-sm btn-outline-danger">Xóa</a></div></td>
-                                            </tr>
+                                            <?php if (!empty($categoryList)): ?>
+                                                <?php foreach ($categoryList as $index => $category): ?>
+                                                    <?php
+                                                    $bikeCount = (int) ($category['bike_count'] ?? 0);
+                                                    $statusText = $bikeCount > 0 ? 'Đang hoạt động' : 'Tạm ẩn';
+                                                    $statusClass = $bikeCount > 0 ? 'status-approved' : 'status-rejected';
+                                                    ?>
+                                                    <tr>
+                                                        <td><?= e(str_pad((string) ($index + 1), 2, '0', STR_PAD_LEFT)) ?></td>
+                                                        <td><?= e($category['name']) ?></td>
+                                                        <td><?= e($category['description'] ?: 'Chưa có mô tả') ?></td>
+                                                        <td><?= e(number_format($bikeCount, 0, ',', '.')) ?></td>
+                                                        <td><span class="status-badge <?= e($statusClass) ?>"><?= e($statusText) ?></span></td>
+                                                        <td><?= e(date('d/m/Y', strtotime($category['created_at']))) ?></td>
+                                                        <td><div class="d-flex flex-wrap gap-2"><a href="bikes.php?category_id=<?= (int) $category['id'] ?>" class="btn btn-sm btn-outline-dark">Xem</a></div></td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            <?php else: ?>
+                                                <tr>
+                                                    <td colspan="7" class="text-center text-muted py-4">Không có danh mục phù hợp.</td>
+                                                </tr>
+                                            <?php endif; ?>
                                         </tbody>
                                     </table>
                                 </div>
@@ -230,25 +385,18 @@
                         </div>
 
                         <div class="col-xl-4">
-                            <div class="content-card mb-4">
+                            <div class="content-card mb-4" id="add-category-form">
                                 <h2 class="section-heading">Thêm danh mục mới</h2>
-                                <form class="d-flex flex-column gap-3">
+                                <form method="post" class="d-flex flex-column gap-3">
                                     <div>
                                         <label class="form-label">Tên danh mục</label>
-                                        <input type="text" class="form-control" placeholder="Ví dụ: Folding Bike">
+                                        <input type="text" name="name" class="form-control" placeholder="Ví dụ: Folding Bike" required>
                                     </div>
                                     <div>
                                         <label class="form-label">Mô tả ngắn</label>
-                                        <textarea class="form-control" rows="4" placeholder="Mô tả ngắn gọn về loại xe và mục đích sử dụng"></textarea>
+                                        <textarea name="description" class="form-control" rows="4" placeholder="Mô tả ngắn gọn về loại xe và mục đích sử dụng"></textarea>
                                     </div>
-                                    <div>
-                                        <label class="form-label">Trạng thái</label>
-                                        <select class="form-select">
-                                            <option>Đang hoạt động</option>
-                                            <option>Tạm ẩn</option>
-                                        </select>
-                                    </div>
-                                    <button type="button" class="btn btn-success w-100">Lưu danh mục</button>
+                                    <button type="submit" name="add_category" class="btn btn-success w-100">Lưu danh mục</button>
                                 </form>
                             </div>
 
@@ -268,9 +416,7 @@
                         <ul class="pagination justify-content-center mb-0">
                             <li class="page-item disabled"><a class="page-link" href="#">Trước</a></li>
                             <li class="page-item active"><a class="page-link" href="#">1</a></li>
-                            <li class="page-item"><a class="page-link" href="#">2</a></li>
-                            <li class="page-item"><a class="page-link" href="#">3</a></li>
-                            <li class="page-item"><a class="page-link" href="#">Sau</a></li>
+                            <li class="page-item disabled"><a class="page-link" href="#">Sau</a></li>
                         </ul>
                     </nav>
 

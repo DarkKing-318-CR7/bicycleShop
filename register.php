@@ -6,12 +6,38 @@ require_once __DIR__ . '/includes/functions.php';
 $errors = [];
 $success = '';
 
+function loadPublicSetting(mysqli $conn, string $key, string $default): string
+{
+    try {
+        $stmt = $conn->prepare("SELECT setting_value FROM settings WHERE setting_key = ? LIMIT 1");
+        if (!$stmt) {
+            return $default;
+        }
+
+        $stmt->bind_param('s', $key);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $row = $result ? $result->fetch_assoc() : null;
+        $stmt->close();
+
+        return isset($row['setting_value']) ? (string) $row['setting_value'] : $default;
+    } catch (Throwable $error) {
+        return $default;
+    }
+}
+
+$allowRegistration = loadPublicSetting($conn, 'allow_registration', '1') === '1';
+$defaultUserRole = loadPublicSetting($conn, 'default_user_role', 'buyer');
+if (!in_array($defaultUserRole, ['buyer', 'seller'], true)) {
+    $defaultUserRole = 'buyer';
+}
+
 $formData = [
     'full_name' => '',
     'email' => '',
     'phone' => '',
     'address' => '',
-    'role' => 'buyer',
+    'role' => $defaultUserRole,
 ];
 
 if (isLoggedIn()) {
@@ -29,11 +55,15 @@ if (isLoggedIn()) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$allowRegistration) {
+        $errors[] = 'Hệ thống hiện đang tắt chức năng đăng ký tài khoản.';
+    }
+
     $formData['full_name'] = trim($_POST['full_name'] ?? '');
     $formData['email'] = trim($_POST['email'] ?? '');
     $formData['phone'] = trim($_POST['phone'] ?? '');
     $formData['address'] = trim($_POST['address'] ?? '');
-    $formData['role'] = trim($_POST['role'] ?? 'buyer');
+    $formData['role'] = trim($_POST['role'] ?? $defaultUserRole);
 
     $password = $_POST['password'] ?? '';
     $confirmPassword = $_POST['confirm_password'] ?? '';
@@ -107,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'email' => '',
                     'phone' => '',
                     'address' => '',
-                    'role' => 'buyer',
+                    'role' => $defaultUserRole,
                 ];
             } else {
                 $errors[] = 'Không thể tạo tài khoản lúc này. Vui lòng thử lại sau.';
