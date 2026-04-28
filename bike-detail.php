@@ -136,7 +136,7 @@ if ($bikeId > 0) {
             SELECT image_url
             FROM bike_images
             WHERE bike_id = ?
-            ORDER BY is_primary DESC, sort_order ASC, id ASC
+            ORDER BY id ASC
         ";
         $imageStmt = $conn->prepare($imageSql);
 
@@ -170,7 +170,7 @@ if ($bikeId > 0) {
                 SELECT bi.id
                 FROM bike_images bi
                 WHERE bi.bike_id = b.id
-                ORDER BY bi.is_primary DESC, bi.sort_order ASC, bi.id ASC
+                ORDER BY bi.id ASC
                 LIMIT 1
             )
             WHERE b.id <> ?
@@ -323,9 +323,9 @@ $sellerAvatar = normalizeImagePath($bike['seller_avatar'] ?? '', $fallbackSeller
                             </div>
 
                             <div class="action-grid">
-                                <a href="#seller-information" class="btn btn-outline-dark">Xem hồ sơ người bán</a>
+                                <a href="checkout.php?bike_id=<?= e((int) $bike['id']) ?>" class="btn btn-success">Mua ngay</a>
                                 <a href="#contact" class="btn btn-success">Liên hệ người bán</a>
-                                <a href="#" class="btn btn-outline-dark">Lưu vào yêu thích</a>
+                                <a href="toggle-favorite.php?bike_id=<?= e((int) $bike['id']) ?>" class="btn btn-outline-dark">Lưu vào yêu thích</a>
                                 <a href="bikes.php" class="btn btn-warning text-dark">Xem thêm xe khác</a>
                             </div>
                         </div>

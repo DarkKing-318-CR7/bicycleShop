@@ -1,15 +1,7 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
-
-if (!isLoggedIn()) {
-    redirect('../login.php');
-}
-
-if (!hasRole('seller')) {
-    redirect('../index.php');
-}
 
 requireRole('seller');
 
@@ -25,6 +17,27 @@ $stats = [
     'approved' => 0,
     'sold' => 0,
 ];
+$successMessage = $_SESSION['success_message'] ?? '';
+$errorMessage = $_SESSION['error_message'] ?? '';
+unset($_SESSION['success_message'], $_SESSION['error_message']);
+
+$keyword = trim($_GET['keyword'] ?? '');
+$statusFilter = $_GET['status'] ?? 'all';
+$categoryId = (int) ($_GET['category_id'] ?? 0);
+$sort = $_GET['sort'] ?? 'newest';
+
+$allowedStatuses = ['all', 'pending', 'approved', 'rejected', 'sold'];
+$allowedSorts = ['newest', 'oldest', 'price_asc', 'price_desc'];
+
+if (!in_array($statusFilter, $allowedStatuses, true)) {
+    $statusFilter = 'all';
+}
+
+if (!in_array($sort, $allowedSorts, true)) {
+    $sort = 'newest';
+}
+
+$categories = [];
 
 function formatBikePrice($price): string
 {
@@ -67,6 +80,230 @@ function getBikeStatusMeta(string $status): array
     }
 }
 
+function bindDynamicParams(mysqli_stmt $stmt, string $types, array $values): void
+{
+    if ($types === '' || empty($values)) {
+        return;
+    }
+
+    $params = [$types];
+
+    foreach ($values as $key => $value) {
+        $params[] = &$values[$key];
+    }
+
+    call_user_func_array([$stmt, 'bind_param'], $params);
+}
+
+function getLocalBikeImagePath(string $imageUrl): ?string
+{
+    $imageUrl = trim($imageUrl);
+
+    if ($imageUrl === '' || preg_match('/^https?:\/\//i', $imageUrl)) {
+        return null;
+    }
+
+    $relativePath = str_replace('\\', '/', ltrim($imageUrl, '/'));
+
+    if (strpos($relativePath, '../') === 0) {
+        $relativePath = substr($relativePath, 3);
+    }
+
+    if (strpos($relativePath, 'uploads/bikes/') !== 0) {
+        return null;
+    }
+
+    $projectRoot = realpath(__DIR__ . '/..');
+    $uploadRoot = realpath(__DIR__ . '/../uploads/bikes');
+
+    if ($projectRoot === false || $uploadRoot === false) {
+        return null;
+    }
+
+    $fullPath = $projectRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+    $realFullPath = realpath($fullPath);
+
+    if ($realFullPath === false || strpos($realFullPath, $uploadRoot) !== 0) {
+        return null;
+    }
+
+    return $realFullPath;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_bike') {
+    $deleteBikeId = (int) ($_POST['bike_id'] ?? 0);
+
+    if ($deleteBikeId <= 0) {
+        $_SESSION['error_message'] = 'Tin đăng không hợp lệ.';
+        redirect('my-bikes.php');
+    }
+
+    $imagePaths = [];
+    $imageStmt = $conn->prepare("
+        SELECT bi.image_url
+        FROM bike_images bi
+        INNER JOIN bikes b ON b.id = bi.bike_id
+        WHERE bi.bike_id = ? AND b.seller_id = ?
+    ");
+
+    if ($imageStmt) {
+        $imageStmt->bind_param('ii', $deleteBikeId, $sellerId);
+        $imageStmt->execute();
+        $imageResult = $imageStmt->get_result();
+
+        if ($imageResult) {
+            while ($row = $imageResult->fetch_assoc()) {
+                $localPath = getLocalBikeImagePath((string) ($row['image_url'] ?? ''));
+
+                if ($localPath !== null) {
+                    $imagePaths[] = $localPath;
+                }
+            }
+        }
+
+        $imageStmt->close();
+    }
+
+    $conn->begin_transaction();
+    $deleted = false;
+
+    $deleteFavoritesStmt = $conn->prepare("DELETE FROM favorites WHERE bike_id = ?");
+    if ($deleteFavoritesStmt) {
+        $deleteFavoritesStmt->bind_param('i', $deleteBikeId);
+        $deleteFavoritesStmt->execute();
+        $deleteFavoritesStmt->close();
+    }
+
+    $deleteImagesStmt = $conn->prepare("DELETE FROM bike_images WHERE bike_id = ?");
+    if ($deleteImagesStmt) {
+        $deleteImagesStmt->bind_param('i', $deleteBikeId);
+        $deleteImagesStmt->execute();
+        $deleteImagesStmt->close();
+    }
+
+    $deleteBikeStmt = $conn->prepare("DELETE FROM bikes WHERE id = ? AND seller_id = ?");
+    if ($deleteBikeStmt) {
+        $deleteBikeStmt->bind_param('ii', $deleteBikeId, $sellerId);
+        $deleteBikeStmt->execute();
+        $deleted = $deleteBikeStmt->affected_rows > 0;
+        $deleteBikeStmt->close();
+    }
+
+    if ($deleted) {
+        $conn->commit();
+
+        foreach (array_unique($imagePaths) as $imagePath) {
+            if (is_file($imagePath)) {
+                @unlink($imagePath);
+            }
+        }
+
+        $_SESSION['success_message'] = 'Đã xóa tin đăng thành công.';
+    } else {
+        $conn->rollback();
+        $_SESSION['error_message'] = 'Không thể xóa tin đăng. Tin có thể không tồn tại hoặc không thuộc tài khoản của bạn.';
+    }
+
+    redirect('my-bikes.php');
+}
+
+$categorySql = "
+    SELECT
+        c.id,
+        c.name,
+        COUNT(b.id) AS bike_count
+    FROM categories c
+    LEFT JOIN bikes b
+        ON b.category_id = c.id
+        AND b.seller_id = ?
+    GROUP BY c.id, c.name
+    ORDER BY c.name ASC
+";
+$categoryStmt = $conn->prepare($categorySql);
+
+if ($categoryStmt) {
+    $categoryStmt->bind_param('i', $sellerId);
+    $categoryStmt->execute();
+    $categoryResult = $categoryStmt->get_result();
+
+    if ($categoryResult) {
+        while ($row = $categoryResult->fetch_assoc()) {
+            $categories[] = $row;
+        }
+    }
+
+    $categoryStmt->close();
+}
+
+$statsStmt = $conn->prepare("SELECT status, COUNT(*) AS total FROM bikes WHERE seller_id = ? GROUP BY status");
+
+if ($statsStmt) {
+    $statsStmt->bind_param('i', $sellerId);
+    $statsStmt->execute();
+    $statsResult = $statsStmt->get_result();
+
+    if ($statsResult) {
+        while ($row = $statsResult->fetch_assoc()) {
+            $count = (int) ($row['total'] ?? 0);
+            $status = strtolower((string) ($row['status'] ?? 'pending'));
+
+            $stats['total'] += $count;
+
+            if ($status === 'pending') {
+                $stats['pending'] += $count;
+            } elseif (in_array($status, ['approved', 'active', 'published'], true)) {
+                $stats['approved'] += $count;
+            } elseif (in_array($status, ['sold', 'completed'], true)) {
+                $stats['sold'] += $count;
+            }
+        }
+    }
+
+    $statsStmt->close();
+}
+
+$where = ["b.seller_id = ?"];
+$types = 'i';
+$params = [$sellerId];
+
+if ($keyword !== '') {
+    $where[] = "(b.title LIKE ? OR b.location LIKE ? OR c.name LIKE ? OR br.name LIKE ?)";
+    $keywordLike = '%' . $keyword . '%';
+    $types .= 'ssss';
+    $params[] = $keywordLike;
+    $params[] = $keywordLike;
+    $params[] = $keywordLike;
+    $params[] = $keywordLike;
+}
+
+if ($statusFilter === 'approved') {
+    $where[] = "b.status IN ('approved', 'active', 'published')";
+} elseif ($statusFilter === 'sold') {
+    $where[] = "b.status IN ('sold', 'completed')";
+} elseif ($statusFilter !== 'all') {
+    $where[] = "b.status = ?";
+    $types .= 's';
+    $params[] = $statusFilter;
+}
+
+if ($categoryId > 0) {
+    $where[] = "b.category_id = ?";
+    $types .= 'i';
+    $params[] = $categoryId;
+}
+
+$orderBy = "b.created_at DESC, b.id DESC";
+
+if ($sort === 'oldest') {
+    $orderBy = "b.created_at ASC, b.id ASC";
+} elseif ($sort === 'price_asc') {
+    $orderBy = "b.price ASC, b.id DESC";
+} elseif ($sort === 'price_desc') {
+    $orderBy = "b.price DESC, b.id DESC";
+}
+
+$whereSql = implode(' AND ', $where);
+
 $sql = "
     SELECT
         b.id,
@@ -87,7 +324,7 @@ $sql = "
         SELECT bi.id
         FROM bike_images bi
         WHERE bi.bike_id = b.id
-        ORDER BY bi.is_primary DESC, bi.sort_order ASC, bi.id ASC
+        ORDER BY bi.id ASC
         LIMIT 1
     )
     LEFT JOIN (
@@ -95,14 +332,17 @@ $sql = "
         FROM favorites
         GROUP BY bike_id
     ) fav ON fav.bike_id = b.id
-    WHERE b.seller_id = ?
-    ORDER BY b.created_at DESC, b.id DESC
+    WHERE {$whereSql}
+    ORDER BY {$orderBy}
 ";
 
 $stmt = $conn->prepare($sql);
 
 if ($stmt) {
-    $stmt->bind_param('si', $fallbackImage, $sellerId);
+    $bikeTypes = 's' . $types;
+    $bikeParams = array_merge([$fallbackImage], $params);
+
+    bindDynamicParams($stmt, $bikeTypes, $bikeParams);
     $stmt->execute();
     $result = $stmt->get_result();
 
@@ -115,23 +355,8 @@ if ($stmt) {
     $stmt->close();
 }
 
-foreach ($bikes as $bike) {
-    $stats['total']++;
-
-    $status = strtolower((string) ($bike['status'] ?? 'pending'));
-
-    if (in_array($status, ['pending'], true)) {
-        $stats['pending']++;
-    }
-
-    if (in_array($status, ['approved', 'active', 'published'], true)) {
-        $stats['approved']++;
-    }
-
-    if (in_array($status, ['sold', 'completed'], true)) {
-        $stats['sold']++;
-    }
-}
+$filteredCount = count($bikes);
+$hasActiveFilters = $keyword !== '' || $statusFilter !== 'all' || $categoryId > 0 || $sort !== 'newest';
 ?>
 <!DOCTYPE html>
 <html lang="vi">
@@ -164,6 +389,8 @@ foreach ($bikes as $bike) {
                     <li class="nav-item"><a class="nav-link" href="#contact">Liên hệ</a></li>
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
+                    <a href="my-bikes.php" class="btn btn-outline-dark">Tin đăng</a>
+                    <a href="orders.php" class="btn btn-outline-dark">Đơn mua</a>
                     <a href="add-bike.php" class="btn btn-success">Đăng tin mới</a>
                     <a href="../logout.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
                 </div>
@@ -181,6 +408,18 @@ foreach ($bikes as $bike) {
         </section>
 
         <section class="container">
+            <?php if ($successMessage !== ''): ?>
+                <div class="alert alert-success" role="alert">
+                    <?= e($successMessage) ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($errorMessage !== ''): ?>
+                <div class="alert alert-danger" role="alert">
+                    <?= e($errorMessage) ?>
+                </div>
+            <?php endif; ?>
+
             <div class="row g-4 mb-4">
                 <div class="col-md-6 col-xl-3">
                     <div class="stats-card">
@@ -218,32 +457,45 @@ foreach ($bikes as $bike) {
                             </div>
                         </div>
 
-                        <div class="toolbar-row">
-                            <input type="text" class="form-control" placeholder="Tìm theo tên xe">
-                            <select class="form-select">
-                                <option selected>Tất cả</option>
-                                <option>Chờ duyệt</option>
-                                <option>Đã duyệt</option>
-                                <option>Từ chối</option>
-                                <option>Đã bán</option>
+                        <form class="toolbar-row" method="get" action="my-bikes.php">
+                            <input
+                                type="text"
+                                name="keyword"
+                                class="form-control"
+                                placeholder="Tìm theo tên xe, hãng, địa điểm"
+                                value="<?= e($keyword) ?>"
+                            >
+                            <select class="form-select" name="status">
+                                <option value="all" <?= $statusFilter === 'all' ? 'selected' : '' ?>>Tất cả</option>
+                                <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Chờ duyệt</option>
+                                <option value="approved" <?= $statusFilter === 'approved' ? 'selected' : '' ?>>Đã duyệt</option>
+                                <option value="rejected" <?= $statusFilter === 'rejected' ? 'selected' : '' ?>>Từ chối</option>
+                                <option value="sold" <?= $statusFilter === 'sold' ? 'selected' : '' ?>>Đã bán</option>
                             </select>
-                            <select class="form-select">
-                                <option selected>Tất cả danh mục</option>
-                                <option>Road Bike</option>
-                                <option>Mountain Bike</option>
-                                <option>Touring</option>
-                                <option>City Bike</option>
-                                <option>E-Bike</option>
+                            <select class="form-select" name="category_id">
+                                <option value="0">Tất cả danh mục</option>
+                                <?php foreach ($categories as $category): ?>
+                                    <option value="<?= e((int) $category['id']) ?>" <?= $categoryId === (int) $category['id'] ? 'selected' : '' ?>>
+                                        <?= e($category['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
                             </select>
-                            <select class="form-select">
-                                <option selected>Mới nhất</option>
-                                <option>Cũ nhất</option>
-                                <option>Giá tăng dần</option>
-                                <option>Giá giảm dần</option>
+                            <select class="form-select" name="sort">
+                                <option value="newest" <?= $sort === 'newest' ? 'selected' : '' ?>>Mới nhất</option>
+                                <option value="oldest" <?= $sort === 'oldest' ? 'selected' : '' ?>>Cũ nhất</option>
+                                <option value="price_asc" <?= $sort === 'price_asc' ? 'selected' : '' ?>>Giá tăng dần</option>
+                                <option value="price_desc" <?= $sort === 'price_desc' ? 'selected' : '' ?>>Giá giảm dần</option>
                             </select>
-                            <button class="btn btn-outline-dark">Lọc</button>
+                            <button class="btn btn-outline-dark" type="submit">Lọc</button>
+                            <?php if ($hasActiveFilters): ?>
+                                <a href="my-bikes.php" class="btn btn-outline-dark">Xóa lọc</a>
+                            <?php endif; ?>
                             <a href="add-bike.php" class="btn btn-success">Đăng tin mới</a>
-                        </div>
+                        </form>
+
+                        <p class="text-muted mb-3">
+                            Hiển thị <?= e(number_format($filteredCount, 0, ',', '.')) ?> tin đăng<?= $hasActiveFilters ? ' theo bộ lọc hiện tại' : '' ?>.
+                        </p>
 
                         <div class="listing-list">
                             <?php if (!empty($bikes)): ?>
@@ -283,7 +535,11 @@ foreach ($bikes as $bike) {
                                             <div class="listing-actions">
                                                 <a href="../bike-detail.php?id=<?= e($bikeId) ?>" class="btn btn-outline-dark">Xem</a>
                                                 <a href="edit-bike.php?id=<?= e($bikeId) ?>" class="btn btn-outline-success">Sửa</a>
-                                                <a href="#" class="btn btn-outline-dark">Xóa</a>
+                                                <form method="post" action="my-bikes.php" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa tin đăng này?');">
+                                                    <input type="hidden" name="action" value="delete_bike">
+                                                    <input type="hidden" name="bike_id" value="<?= e($bikeId) ?>">
+                                                    <button type="submit" class="btn btn-outline-dark">Xóa</button>
+                                                </form>
                                                 <?php if (!in_array($statusValue, ['sold', 'completed'], true)): ?>
                                                     <a href="#" class="btn btn-success">Đánh dấu đã bán</a>
                                                 <?php endif; ?>
@@ -301,17 +557,11 @@ foreach ($bikes as $bike) {
                             <?php endif; ?>
                         </div>
 
-                        <div class="pagination-wrap">
-                            <nav aria-label="Phân trang tin đăng">
-                                <ul class="pagination justify-content-center justify-content-lg-start flex-wrap">
-                                    <li class="page-item"><a class="page-link" href="#">Trước</a></li>
-                                    <li class="page-item active"><a class="page-link" href="#">1</a></li>
-                                    <li class="page-item"><a class="page-link" href="#">2</a></li>
-                                    <li class="page-item"><a class="page-link" href="#">3</a></li>
-                                    <li class="page-item"><a class="page-link" href="#">Sau</a></li>
-                                </ul>
-                            </nav>
-                        </div>
+                        <?php if ($filteredCount > 0): ?>
+                            <div class="pagination-wrap">
+                                <span class="text-muted">Đã tải toàn bộ <?= e(number_format($filteredCount, 0, ',', '.')) ?> tin đăng phù hợp.</span>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
 
