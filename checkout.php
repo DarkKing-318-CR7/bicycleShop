@@ -7,9 +7,10 @@ requireRole('buyer');
 
 $currentUser = currentUser();
 $buyerId = (int)($currentUser['id'] ?? 0);
-$buyerName = $currentUser['full_name'] ?? '';
-$buyerPhone = '';
-$buyerAddress = '';
+
+$buyerName = $currentUser['full_name'] ?? 'Tài khoản';
+
+
 $fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
 
 $bikeId = (int)($_GET['bike_id'] ?? $_POST['bike_id'] ?? 0);
@@ -217,6 +218,7 @@ function formatDateVi(?string $date): string
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
                     <a href="buyer/my-orders.php" class="btn btn-outline-dark">Đơn hàng của tôi</a>
+                    <a href="profile.php" class="btn btn-outline-dark"><?= e($buyerName) ?></a>
                     <a href="logout.php" class="btn btn-success">Đăng xuất</a>
                 </div>
             </div>

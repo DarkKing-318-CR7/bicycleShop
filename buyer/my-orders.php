@@ -7,11 +7,14 @@ requireRole('buyer');
 
 $currentUser = currentUser();
 $buyerId = (int) ($currentUser['id'] ?? 0);
+$buyerName = $currentUser['full_name'] ?? 'Tài khoản';
+$buyerEmail = $currentUser['email'] ?? '';
 $fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
 
 $keyword = trim($_GET['keyword'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
 $sort = trim($_GET['sort'] ?? 'newest');
+$contactSent = $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['contact_form']);
 
 $allowedStatuses = ['pending', 'confirmed', 'shipping', 'completed', 'cancelled'];
 if (!in_array($statusFilter, $allowedStatuses, true)) {
@@ -222,7 +225,8 @@ if ($stmt) {
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
                     <a href="favorites.php" class="btn btn-outline-dark">Yêu thích</a>
-                    <a href="profile.php" class="btn btn-success">Tài khoản</a>
+                    <a href="../profile.php" class="btn btn-outline-dark"><?= e($buyerName) ?></a>
+                    <a href="../logout.php" class="btn btn-success">Đăng xuất</a>
                 </div>
             </div>
         </div>
@@ -344,7 +348,95 @@ if ($stmt) {
         </section>
     </main>
 
-    <footer id="contact">
+    <section class="contact-section" id="contact">
+        <div class="container">
+            <div class="contact-panel">
+                <div class="row g-4 align-items-stretch">
+                    <div class="col-lg-5">
+                        <div class="contact-info h-100">
+                            <div class="section-label text-warning">Liên hệ</div>
+                            <h2 class="section-title text-white mb-3">Cần hỗ trợ đơn mua?</h2>
+                            <p class="contact-copy">Người mua có thể gửi yêu cầu hỗ trợ về đơn hàng, lịch hẹn xem xe, thanh toán hoặc trao đổi với người bán.</p>
+                            <div class="contact-list">
+                                <div class="contact-item">
+                                    <span><i class="bi bi-geo-alt"></i></span>
+                                    <div>
+                                        <strong>Địa chỉ</strong>
+                                        <p>128 Market Street, Ho Chi Minh City</p>
+                                    </div>
+                                </div>
+                                <div class="contact-item">
+                                    <span><i class="bi bi-telephone"></i></span>
+                                    <div>
+                                        <strong>Hotline</strong>
+                                        <p>+84 901 234 567</p>
+                                    </div>
+                                </div>
+                                <div class="contact-item">
+                                    <span><i class="bi bi-envelope"></i></span>
+                                    <div>
+                                        <strong>Email</strong>
+                                        <p>buyer-support@bikemarketplace.com</p>
+                                    </div>
+                                </div>
+                                <div class="contact-item">
+                                    <span><i class="bi bi-clock"></i></span>
+                                    <div>
+                                        <strong>Giờ hỗ trợ</strong>
+                                        <p>8:00 AM - 8:00 PM mỗi ngày</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-7">
+                        <form class="contact-form h-100" action="my-orders.php#contact" method="post">
+                            <input type="hidden" name="contact_form" value="1">
+                            <?php if ($contactSent): ?>
+                                <div class="alert alert-success" role="alert">
+                                    Cảm ơn bạn đã liên hệ. Bike Marketplace sẽ phản hồi trong thời gian sớm nhất.
+                                </div>
+                            <?php endif; ?>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold" for="contact_name">Họ và tên</label>
+                                    <input type="text" class="form-control" id="contact_name" name="contact_name" value="<?= e($buyerName) ?>" placeholder="Nhập họ và tên">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold" for="contact_phone">Số điện thoại</label>
+                                    <input type="tel" class="form-control" id="contact_phone" name="contact_phone" placeholder="Nhập số điện thoại">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold" for="contact_email">Email</label>
+                                    <input type="email" class="form-control" id="contact_email" name="contact_email" value="<?= e($buyerEmail) ?>" placeholder="email@example.com">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold" for="contact_topic">Chủ đề</label>
+                                    <select class="form-select" id="contact_topic" name="contact_topic">
+                                        <option>Hỗ trợ đơn mua</option>
+                                        <option>Tư vấn mua xe</option>
+                                        <option>Hỗ trợ giao dịch</option>
+                                        <option>Góp ý hệ thống</option>
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label fw-semibold" for="contact_message">Nội dung</label>
+                                    <textarea class="form-control" id="contact_message" name="contact_message" rows="5" placeholder="Bạn cần hỗ trợ điều gì?"></textarea>
+                                </div>
+                                <div class="col-12 d-grid d-sm-flex justify-content-sm-end">
+                                    <button type="submit" class="btn btn-success px-4">
+                                        <i class="bi bi-send me-2"></i>Gửi liên hệ
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
         <div class="container">
             <div class="row g-4">
                 <div class="col-lg-4">

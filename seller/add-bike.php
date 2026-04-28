@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
@@ -386,6 +386,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <li class="nav-item"><a class="nav-link" href="#contact">Liên hệ</a></li>
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
+                    <a href="../profile.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
                     <a href="my-bikes.php" class="btn btn-outline-dark">Tin đăng</a>
                     <a href="orders.php" class="btn btn-outline-dark">Đơn mua</a>
                     <a href="<?= e(getUserHomeLink($userRole)) ?>" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
