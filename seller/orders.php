@@ -353,7 +353,8 @@ if ($stmt) {
                     <a href="my-bikes.php" class="btn btn-outline-dark">Tin đăng</a>
                     <a href="orders.php" class="btn btn-outline-dark">Đơn mua</a>
                     <a href="add-bike.php" class="btn btn-success">Đăng tin mới</a>
-                    <a href="../logout.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
+                    <a href="../profile.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
+                    <a href="../logout.php" class="btn btn-success">Đăng xuất</a>
                 </div>
             </div>
         </div>

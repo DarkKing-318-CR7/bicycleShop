@@ -34,6 +34,30 @@ function baseUrl(string $path = ''): string
     return $base . '/' . $path;
 }
 
+function tableColumnExists(mysqli $conn, string $table, string $column): bool
+{
+    $sql = "
+        SELECT COUNT(*) AS total
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND COLUMN_NAME = ?
+    ";
+    $stmt = $conn->prepare($sql);
+
+    if (!$stmt) {
+        return false;
+    }
+
+    $stmt->bind_param('ss', $table, $column);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    return (int) ($row['total'] ?? 0) > 0;
+}
+
 function requireLogin(): void
 {
     if (!isLoggedIn()) {
