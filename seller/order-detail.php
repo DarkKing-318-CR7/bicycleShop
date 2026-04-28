@@ -10,6 +10,9 @@ $sellerId = (int) ($currentUser['id'] ?? 0);
 $sellerName = $currentUser['full_name'] ?? 'Người bán';
 $fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
 $orderId = (int) ($_GET['id'] ?? 0);
+$successMessage = $_SESSION['success_message'] ?? '';
+$errorMessage = $_SESSION['error_message'] ?? '';
+unset($_SESSION['success_message'], $_SESSION['error_message']);
 
 if ($orderId <= 0) {
     redirect('orders.php');
@@ -77,6 +80,94 @@ function getOrderAmountColumn(mysqli $conn): string
 }
 
 $amountColumn = getOrderAmountColumn($conn);
+
+function updateSellerOrderStatus(mysqli $conn, int $orderId, int $sellerId, string $newStatus): bool
+{
+    if (!in_array($newStatus, ['pending', 'confirmed', 'shipping', 'completed', 'cancelled'], true)) {
+        return false;
+    }
+
+    $conn->begin_transaction();
+
+    $stmt = $conn->prepare("
+        UPDATE orders o
+        INNER JOIN bikes b ON b.id = o.bike_id
+        SET o.status = ?, o.updated_at = CURRENT_TIMESTAMP
+        WHERE o.id = ?
+          AND b.seller_id = ?
+          AND o.status NOT IN ('completed', 'cancelled')
+    ");
+
+    if (!$stmt) {
+        $conn->rollback();
+        return false;
+    }
+
+    $stmt->bind_param('sii', $newStatus, $orderId, $sellerId);
+    $stmt->execute();
+    $updated = $stmt->affected_rows > 0;
+    $stmt->close();
+
+    if (!$updated) {
+        $conn->rollback();
+        return false;
+    }
+
+    if ($newStatus === 'completed') {
+        $bikeStmt = $conn->prepare("
+            UPDATE bikes b
+            INNER JOIN orders o ON o.bike_id = b.id
+            SET b.status = 'sold', b.updated_at = CURRENT_TIMESTAMP
+            WHERE o.id = ? AND b.seller_id = ?
+        ");
+
+        if (!$bikeStmt) {
+            $conn->rollback();
+            return false;
+        }
+
+        $bikeStmt->bind_param('ii', $orderId, $sellerId);
+        $bikeStmt->execute();
+        $bikeStmt->close();
+
+        $cancelOtherStmt = $conn->prepare("
+            UPDATE orders
+            SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+            WHERE bike_id = (
+                SELECT bike_id FROM (
+                    SELECT bike_id FROM orders WHERE id = ?
+                ) AS completed_order
+            )
+              AND id <> ?
+              AND status IN ('pending', 'confirmed', 'shipping')
+        ");
+
+        if (!$cancelOtherStmt) {
+            $conn->rollback();
+            return false;
+        }
+
+        $cancelOtherStmt->bind_param('ii', $orderId, $orderId);
+        $cancelOtherStmt->execute();
+        $cancelOtherStmt->close();
+    }
+
+    $conn->commit();
+    return true;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order_status'])) {
+    $newStatus = trim($_POST['new_status'] ?? '');
+
+    if (updateSellerOrderStatus($conn, $orderId, $sellerId, $newStatus)) {
+        $_SESSION['success_message'] = 'Đã cập nhật trạng thái đơn mua.';
+    } else {
+        $_SESSION['error_message'] = 'Không thể cập nhật đơn mua. Đơn có thể đã hoàn tất, đã hủy hoặc không thuộc tài khoản của bạn.';
+    }
+
+    redirect('order-detail.php?id=' . $orderId);
+}
+
 $order = null;
 
 $sql = "
@@ -164,6 +255,8 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                     <li class="nav-item"><a class="nav-link" href="#contact">Liên hệ</a></li>
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
+                    <a href="my-bikes.php" class="btn btn-outline-dark">Tin đăng</a>
+                    <a href="orders.php" class="btn btn-outline-dark">Đơn mua</a>
                     <a href="add-bike.php" class="btn btn-success">Đăng tin mới</a>
                     <a href="../logout.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
                 </div>
@@ -193,6 +286,18 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
         </section>
 
         <section class="container">
+            <?php if ($successMessage !== ''): ?>
+                <div class="alert alert-success" role="alert">
+                    <?= e($successMessage) ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($errorMessage !== ''): ?>
+                <div class="alert alert-danger" role="alert">
+                    <?= e($errorMessage) ?>
+                </div>
+            <?php endif; ?>
+
             <div class="row g-4 mb-4">
                 <div class="col-md-6 col-xl-4">
                     <div class="stats-card">
@@ -281,6 +386,26 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                     <section class="sidebar-card">
                         <h2 class="section-heading">Điều hướng</h2>
                         <div class="d-grid gap-2">
+                            <?php if (($order['status'] ?? '') === 'pending'): ?>
+                                <form method="post">
+                                    <input type="hidden" name="new_status" value="confirmed">
+                                    <button type="submit" name="update_order_status" class="btn btn-success w-100">Xác nhận đơn</button>
+                                </form>
+                                <form method="post" onsubmit="return confirm('Bạn có chắc muốn hủy đơn này?');">
+                                    <input type="hidden" name="new_status" value="cancelled">
+                                    <button type="submit" name="update_order_status" class="btn btn-outline-dark w-100">Hủy đơn</button>
+                                </form>
+                            <?php elseif (($order['status'] ?? '') === 'confirmed'): ?>
+                                <form method="post">
+                                    <input type="hidden" name="new_status" value="shipping">
+                                    <button type="submit" name="update_order_status" class="btn btn-success w-100">Chuyển sang đang giao dịch</button>
+                                </form>
+                            <?php elseif (($order['status'] ?? '') === 'shipping'): ?>
+                                <form method="post" onsubmit="return confirm('Hoàn tất đơn này và đánh dấu xe đã bán?');">
+                                    <input type="hidden" name="new_status" value="completed">
+                                    <button type="submit" name="update_order_status" class="btn btn-success w-100">Hoàn tất đơn</button>
+                                </form>
+                            <?php endif; ?>
                             <a href="../bike-detail.php?id=<?= e((int) ($order['bike_id'] ?? 0)) ?>" class="btn btn-success">Xem xe</a>
                             <a href="orders.php" class="btn btn-light border">Quay lại danh sách</a>
                         </div>

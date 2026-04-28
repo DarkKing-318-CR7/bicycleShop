@@ -7,6 +7,9 @@ requireRole('buyer');
 
 $currentUser = currentUser();
 $buyerId = (int)($currentUser['id'] ?? 0);
+$buyerName = $currentUser['full_name'] ?? '';
+$buyerPhone = '';
+$buyerAddress = '';
 $fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
 
 $bikeId = (int)($_GET['bike_id'] ?? $_POST['bike_id'] ?? 0);
@@ -26,6 +29,25 @@ $formData = [
 ];
 
 $bike = null;
+
+$buyerStmt = $conn->prepare("SELECT full_name, phone, address FROM users WHERE id = ? LIMIT 1");
+if ($buyerStmt) {
+    $buyerStmt->bind_param('i', $buyerId);
+    $buyerStmt->execute();
+    $buyerResult = $buyerStmt->get_result();
+    $buyerRow = $buyerResult ? $buyerResult->fetch_assoc() : null;
+    $buyerStmt->close();
+
+    if ($buyerRow) {
+        $buyerName = $buyerRow['full_name'] ?: $buyerName;
+        $buyerPhone = $buyerRow['phone'] ?? '';
+        $buyerAddress = $buyerRow['address'] ?? '';
+    }
+}
+
+if ($formData['meeting_location'] === '' && $buyerAddress !== '') {
+    $formData['meeting_location'] = $buyerAddress;
+}
 
 $bikeSql = "
     SELECT
@@ -90,40 +112,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $error === '') {
     } elseif (!in_array($formData['payment_method'], ['cash', 'transfer'], true)) {
         $error = 'Phương thức thanh toán không hợp lệ.';
     } else {
-        $offeredPrice = (float)($bike['price'] ?? 0);
-        $sellerId = (int)($bike['seller_id'] ?? 0);
-        $orderCode = 'ORD-' . date('YmdHis') . '-' . $buyerId;
+        $totalAmount = (float)($bike['price'] ?? 0);
+        $noteParts = [
+            'Phương thức liên hệ: ' . $formData['contact_method'],
+            'Phương thức thanh toán: ' . $formData['payment_method'],
+        ];
+
+        if ($formData['buyer_note'] !== '') {
+            $noteParts[] = 'Ghi chú: ' . $formData['buyer_note'];
+        }
+
+        $note = implode("\n", $noteParts);
 
         $insertSql = "
             INSERT INTO orders (
-                order_code,
-                bike_id,
                 buyer_id,
-                seller_id,
-                offered_price,
-                contact_method,
-                meeting_location,
-                buyer_note,
+                bike_id,
+                quantity,
+                total_amount,
                 status,
-                payment_method,
-                payment_status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'unpaid')
+                shipping_name,
+                shipping_phone,
+                shipping_address,
+                note
+            ) VALUES (?, ?, 1, ?, 'pending', ?, ?, ?, ?)
         ";
 
         $insertStmt = $conn->prepare($insertSql);
 
         if ($insertStmt) {
             $insertStmt->bind_param(
-                'siiidssss',
-                $orderCode,
-                $bikeId,
+                'iidssss',
                 $buyerId,
-                $sellerId,
-                $offeredPrice,
-                $formData['contact_method'],
+                $bikeId,
+                $totalAmount,
+                $buyerName,
+                $buyerPhone,
                 $formData['meeting_location'],
-                $formData['buyer_note'],
-                $formData['payment_method']
+                $note
             );
 
             if ($insertStmt->execute()) {
