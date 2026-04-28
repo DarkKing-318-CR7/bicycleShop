@@ -16,7 +16,7 @@ $statusFilter = trim($_GET['status'] ?? '');
 $sort = trim($_GET['sort'] ?? 'newest');
 $contactSent = $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['contact_form']);
 
-$allowedStatuses = ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'];
+$allowedStatuses = ['pending', 'confirmed', 'shipping', 'completed', 'cancelled'];
 if (!in_array($statusFilter, $allowedStatuses, true)) {
     $statusFilter = '';
 }
@@ -50,7 +50,7 @@ function getOrderStatusMeta(string $status): array
     switch ($status) {
         case 'confirmed':
             return ['class' => 'status-approved', 'label' => 'Đã xác nhận'];
-        case 'in_progress':
+        case 'shipping':
             return ['class' => 'status-approved', 'label' => 'Đang giao dịch'];
         case 'completed':
             return ['class' => 'status-sold', 'label' => 'Hoàn tất'];
@@ -85,7 +85,7 @@ $statsSql = "
     SELECT
         COUNT(*) AS total_orders,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_orders,
-        SUM(CASE WHEN status IN ('confirmed', 'in_progress') THEN 1 ELSE 0 END) AS confirmed_orders,
+        SUM(CASE WHEN status IN ('confirmed', 'shipping') THEN 1 ELSE 0 END) AS confirmed_orders,
         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_orders
     FROM orders
     WHERE buyer_id = ?
@@ -110,14 +110,10 @@ if ($statsStmt) {
 $sql = "
     SELECT
         o.id,
-        o.order_code,
         o.bike_id,
-        o.offered_price,
-        o.contact_method,
-        o.meeting_location,
-        o.buyer_note,
-        o.payment_method,
-        o.payment_status,
+        o.total_amount,
+        o.shipping_address,
+        o.note,
         o.status,
         o.created_at,
         COALESCE(b.title, 'Xe đạp thể thao') AS bike_title,
@@ -130,7 +126,7 @@ $sql = "
     LEFT JOIN bikes b ON b.id = o.bike_id
     LEFT JOIN categories c ON c.id = b.category_id
     LEFT JOIN brands br ON br.id = b.brand_id
-    LEFT JOIN users s ON s.id = o.seller_id
+    LEFT JOIN users s ON s.id = b.seller_id
     LEFT JOIN bike_images img ON img.id = (
         SELECT bi.id
         FROM bike_images bi
@@ -145,7 +141,7 @@ $params = [$fallbackImage, $buyerId];
 $types = 'si';
 
 if ($keyword !== '') {
-    $sql .= " AND (b.title LIKE ? OR o.order_code LIKE ?)";
+    $sql .= " AND (b.title LIKE ? OR CAST(o.id AS CHAR) LIKE ?)";
     $likeKeyword = '%' . $keyword . '%';
     $params[] = $likeKeyword;
     $params[] = $likeKeyword;
@@ -163,10 +159,10 @@ switch ($sort) {
         $sql .= " ORDER BY o.created_at ASC, o.id ASC";
         break;
     case 'price_desc':
-        $sql .= " ORDER BY o.offered_price DESC, o.created_at DESC";
+        $sql .= " ORDER BY o.total_amount DESC, o.created_at DESC";
         break;
     case 'price_asc':
-        $sql .= " ORDER BY o.offered_price ASC, o.created_at DESC";
+        $sql .= " ORDER BY o.total_amount ASC, o.created_at DESC";
         break;
     case 'newest':
     default:
@@ -293,7 +289,7 @@ if ($stmt) {
                         <option value="" <?= $statusFilter === '' ? 'selected' : '' ?>>Tất cả trạng thái</option>
                         <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Chờ xác nhận</option>
                         <option value="confirmed" <?= $statusFilter === 'confirmed' ? 'selected' : '' ?>>Đã xác nhận</option>
-                        <option value="in_progress" <?= $statusFilter === 'in_progress' ? 'selected' : '' ?>>Đang giao dịch</option>
+                        <option value="shipping" <?= $statusFilter === 'shipping' ? 'selected' : '' ?>>Đang giao dịch</option>
                         <option value="completed" <?= $statusFilter === 'completed' ? 'selected' : '' ?>>Hoàn tất</option>
                         <option value="cancelled" <?= $statusFilter === 'cancelled' ? 'selected' : '' ?>>Đã hủy</option>
                     </select>
@@ -323,7 +319,7 @@ if ($stmt) {
                                         <div class="listing-sub mb-2"><?= e($order['bike_title'] ?? 'Xe đạp thể thao') ?></div>
                                         <div class="listing-meta">
                                             <span><i class="bi bi-person me-1"></i> Người bán: <?= e($order['seller_name'] ?? 'Người bán') ?></span>
-                                            <span><i class="bi bi-cash me-1"></i> <?= e(formatPriceVnd($order['offered_price'] ?? 0)) ?></span>
+                                            <span><i class="bi bi-cash me-1"></i> <?= e(formatPriceVnd($order['total_amount'] ?? 0)) ?></span>
                                             <span><i class="bi bi-calendar-event me-1"></i> <?= e(formatDateVi($order['created_at'] ?? null)) ?></span>
                                         </div>
                                     </div>

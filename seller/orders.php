@@ -9,6 +9,24 @@ $currentUser = currentUser();
 $sellerId = (int) ($currentUser['id'] ?? 0);
 $sellerName = $currentUser['full_name'] ?? 'Người bán';
 $fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
+$successMessage = $_SESSION['success_message'] ?? '';
+$errorMessage = $_SESSION['error_message'] ?? '';
+unset($_SESSION['success_message'], $_SESSION['error_message']);
+
+$keyword = trim($_GET['keyword'] ?? '');
+$statusFilter = trim($_GET['status'] ?? '');
+$sort = trim($_GET['sort'] ?? 'newest');
+
+$allowedStatuses = ['pending', 'confirmed', 'shipping', 'completed', 'cancelled'];
+$allowedSorts = ['newest', 'oldest', 'price_desc', 'price_asc'];
+
+if (!in_array($statusFilter, $allowedStatuses, true)) {
+    $statusFilter = '';
+}
+
+if (!in_array($sort, $allowedSorts, true)) {
+    $sort = 'newest';
+}
 
 function formatPriceVnd($price): string
 {
@@ -71,7 +89,112 @@ function getOrderAmountColumn(mysqli $conn): string
     return 'total_amount';
 }
 
+function bindDynamicParams(mysqli_stmt $stmt, string $types, array $values): void
+{
+    if ($types === '' || empty($values)) {
+        return;
+    }
+
+    $params = [$types];
+
+    foreach ($values as $key => $value) {
+        $params[] = &$values[$key];
+    }
+
+    call_user_func_array([$stmt, 'bind_param'], $params);
+}
+
+function updateSellerOrderStatus(mysqli $conn, int $orderId, int $sellerId, string $newStatus): bool
+{
+    if (!in_array($newStatus, ['pending', 'confirmed', 'shipping', 'completed', 'cancelled'], true)) {
+        return false;
+    }
+
+    $conn->begin_transaction();
+
+    $stmt = $conn->prepare("
+        UPDATE orders o
+        INNER JOIN bikes b ON b.id = o.bike_id
+        SET o.status = ?, o.updated_at = CURRENT_TIMESTAMP
+        WHERE o.id = ?
+          AND b.seller_id = ?
+          AND o.status NOT IN ('completed', 'cancelled')
+    ");
+
+    if (!$stmt) {
+        $conn->rollback();
+        return false;
+    }
+
+    $stmt->bind_param('sii', $newStatus, $orderId, $sellerId);
+    $stmt->execute();
+    $updated = $stmt->affected_rows > 0;
+    $stmt->close();
+
+    if (!$updated) {
+        $conn->rollback();
+        return false;
+    }
+
+    if ($newStatus === 'completed') {
+        $bikeStmt = $conn->prepare("
+            UPDATE bikes b
+            INNER JOIN orders o ON o.bike_id = b.id
+            SET b.status = 'sold', b.updated_at = CURRENT_TIMESTAMP
+            WHERE o.id = ? AND b.seller_id = ?
+        ");
+
+        if (!$bikeStmt) {
+            $conn->rollback();
+            return false;
+        }
+
+        $bikeStmt->bind_param('ii', $orderId, $sellerId);
+        $bikeStmt->execute();
+        $bikeStmt->close();
+
+        $cancelOtherStmt = $conn->prepare("
+            UPDATE orders
+            SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+            WHERE bike_id = (
+                SELECT bike_id FROM (
+                    SELECT bike_id FROM orders WHERE id = ?
+                ) AS completed_order
+            )
+              AND id <> ?
+              AND status IN ('pending', 'confirmed', 'shipping')
+        ");
+
+        if (!$cancelOtherStmt) {
+            $conn->rollback();
+            return false;
+        }
+
+        $cancelOtherStmt->bind_param('ii', $orderId, $orderId);
+        $cancelOtherStmt->execute();
+        $cancelOtherStmt->close();
+    }
+
+    $conn->commit();
+    return true;
+}
+
 $amountColumn = getOrderAmountColumn($conn);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order_status'])) {
+    $orderId = (int) ($_POST['order_id'] ?? 0);
+    $newStatus = trim($_POST['new_status'] ?? '');
+
+    if ($orderId <= 0) {
+        $_SESSION['error_message'] = 'Đơn mua không hợp lệ.';
+    } elseif (updateSellerOrderStatus($conn, $orderId, $sellerId, $newStatus)) {
+        $_SESSION['success_message'] = 'Đã cập nhật trạng thái đơn mua.';
+    } else {
+        $_SESSION['error_message'] = 'Không thể cập nhật đơn mua. Đơn có thể đã hoàn tất, đã hủy hoặc không thuộc tài khoản của bạn.';
+    }
+
+    redirect('orders.php');
+}
 
 $stats = [
     'total' => 0,
@@ -79,6 +202,7 @@ $stats = [
     'confirmed' => 0,
     'shipping' => 0,
     'completed' => 0,
+    'cancelled' => 0,
 ];
 
 $statsSql = "
@@ -87,7 +211,8 @@ $statsSql = "
         SUM(CASE WHEN o.status = 'pending' THEN 1 ELSE 0 END) AS pending_orders,
         SUM(CASE WHEN o.status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed_orders,
         SUM(CASE WHEN o.status = 'shipping' THEN 1 ELSE 0 END) AS shipping_orders,
-        SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END) AS completed_orders
+        SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END) AS completed_orders,
+        SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_orders
     FROM orders o
     INNER JOIN bikes b ON b.id = o.bike_id
     WHERE b.seller_id = ?
@@ -107,6 +232,7 @@ if ($statsStmt) {
         $stats['confirmed'] = (int) ($statsRow['confirmed_orders'] ?? 0);
         $stats['shipping'] = (int) ($statsRow['shipping_orders'] ?? 0);
         $stats['completed'] = (int) ($statsRow['completed_orders'] ?? 0);
+        $stats['cancelled'] = (int) ($statsRow['cancelled_orders'] ?? 0);
     }
 }
 
@@ -114,9 +240,11 @@ $orders = [];
 $sql = "
     SELECT
         o.id,
+        o.bike_id,
         o.status,
         o.created_at,
         o.{$amountColumn} AS order_total,
+        o.shipping_phone,
         COALESCE(b.title, 'Xe đạp thể thao') AS bike_title,
         COALESCE(u.full_name, 'Người mua') AS buyer_name,
         COALESCE(img.image_url, ?) AS image_url
@@ -131,12 +259,47 @@ $sql = "
         LIMIT 1
     )
     WHERE b.seller_id = ?
-    ORDER BY o.created_at DESC, o.id DESC
 ";
+
+$params = [$fallbackImage, $sellerId];
+$types = 'si';
+
+if ($keyword !== '') {
+    $sql .= " AND (b.title LIKE ? OR u.full_name LIKE ? OR o.shipping_phone LIKE ? OR CAST(o.id AS CHAR) LIKE ?)";
+    $keywordLike = '%' . $keyword . '%';
+    $params[] = $keywordLike;
+    $params[] = $keywordLike;
+    $params[] = $keywordLike;
+    $params[] = $keywordLike;
+    $types .= 'ssss';
+}
+
+if ($statusFilter !== '') {
+    $sql .= " AND o.status = ?";
+    $params[] = $statusFilter;
+    $types .= 's';
+}
+
+switch ($sort) {
+    case 'oldest':
+        $sql .= " ORDER BY o.created_at ASC, o.id ASC";
+        break;
+    case 'price_desc':
+        $sql .= " ORDER BY o.{$amountColumn} DESC, o.created_at DESC";
+        break;
+    case 'price_asc':
+        $sql .= " ORDER BY o.{$amountColumn} ASC, o.created_at DESC";
+        break;
+    case 'newest':
+    default:
+        $sql .= " ORDER BY o.created_at DESC, o.id DESC";
+        break;
+}
+
 $stmt = $conn->prepare($sql);
 
 if ($stmt) {
-    $stmt->bind_param('si', $fallbackImage, $sellerId);
+    bindDynamicParams($stmt, $types, $params);
     $stmt->execute();
     $result = $stmt->get_result();
 
@@ -180,6 +343,8 @@ if ($stmt) {
                     <li class="nav-item"><a class="nav-link" href="#contact">Liên hệ</a></li>
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
+                    <a href="my-bikes.php" class="btn btn-outline-dark">Tin đăng</a>
+                    <a href="orders.php" class="btn btn-outline-dark">Đơn mua</a>
                     <a href="add-bike.php" class="btn btn-success">Đăng tin mới</a>
                     <a href="../profile.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
                     <a href="../logout.php" class="btn btn-success">Đăng xuất</a>
@@ -198,6 +363,18 @@ if ($stmt) {
         </section>
 
         <section class="container">
+            <?php if ($successMessage !== ''): ?>
+                <div class="alert alert-success" role="alert">
+                    <?= e($successMessage) ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($errorMessage !== ''): ?>
+                <div class="alert alert-danger" role="alert">
+                    <?= e($errorMessage) ?>
+                </div>
+            <?php endif; ?>
+
             <div class="row g-4 mb-4">
                 <div class="col-md-6 col-xl">
                     <div class="stats-card">
@@ -239,6 +416,34 @@ if ($stmt) {
                     </div>
                 </div>
 
+                <form method="get" class="toolbar-row">
+                    <input
+                        type="text"
+                        class="form-control"
+                        name="keyword"
+                        placeholder="TĂ¬m theo mĂ£ Ä‘Æ¡n, xe, ngÆ°á»i mua, sá»‘ Ä‘iá»‡n thoáº¡i"
+                        value="<?= e($keyword) ?>"
+                    >
+                    <select name="status" class="form-select">
+                        <option value="" <?= $statusFilter === '' ? 'selected' : '' ?>>Táº¥t cáº£ tráº¡ng thĂ¡i</option>
+                        <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Chá» xĂ¡c nháº­n</option>
+                        <option value="confirmed" <?= $statusFilter === 'confirmed' ? 'selected' : '' ?>>ÄĂ£ xĂ¡c nháº­n</option>
+                        <option value="shipping" <?= $statusFilter === 'shipping' ? 'selected' : '' ?>>Äang giao dá»‹ch</option>
+                        <option value="completed" <?= $statusFilter === 'completed' ? 'selected' : '' ?>>HoĂ n táº¥t</option>
+                        <option value="cancelled" <?= $statusFilter === 'cancelled' ? 'selected' : '' ?>>ÄĂ£ há»§y</option>
+                    </select>
+                    <select name="sort" class="form-select">
+                        <option value="newest" <?= $sort === 'newest' ? 'selected' : '' ?>>Má»›i nháº¥t</option>
+                        <option value="oldest" <?= $sort === 'oldest' ? 'selected' : '' ?>>CÅ© nháº¥t</option>
+                        <option value="price_desc" <?= $sort === 'price_desc' ? 'selected' : '' ?>>GiĂ¡ cao Ä‘áº¿n tháº¥p</option>
+                        <option value="price_asc" <?= $sort === 'price_asc' ? 'selected' : '' ?>>GiĂ¡ tháº¥p Ä‘áº¿n cao</option>
+                    </select>
+                    <button type="submit" class="btn btn-outline-dark">Lá»c</button>
+                    <?php if ($keyword !== '' || $statusFilter !== '' || $sort !== 'newest'): ?>
+                        <a href="orders.php" class="btn btn-outline-dark">XĂ³a lá»c</a>
+                    <?php endif; ?>
+                </form>
+
                 <div class="listing-list">
                     <?php if (!empty($orders)): ?>
                         <?php foreach ($orders as $order): ?>
@@ -260,6 +465,30 @@ if ($stmt) {
                                     </div>
                                     <div class="listing-actions">
                                         <a href="order-detail.php?id=<?= e((int) ($order['id'] ?? 0)) ?>" class="btn btn-outline-dark">Xem chi tiết</a>
+                                        <?php if (($order['status'] ?? '') === 'pending'): ?>
+                                            <form method="post" class="d-inline">
+                                                <input type="hidden" name="order_id" value="<?= e((int) ($order['id'] ?? 0)) ?>">
+                                                <input type="hidden" name="new_status" value="confirmed">
+                                                <button type="submit" name="update_order_status" class="btn btn-success">Xác nhận</button>
+                                            </form>
+                                            <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn hủy đơn này?');">
+                                                <input type="hidden" name="order_id" value="<?= e((int) ($order['id'] ?? 0)) ?>">
+                                                <input type="hidden" name="new_status" value="cancelled">
+                                                <button type="submit" name="update_order_status" class="btn btn-outline-dark">Hủy</button>
+                                            </form>
+                                        <?php elseif (($order['status'] ?? '') === 'confirmed'): ?>
+                                            <form method="post" class="d-inline">
+                                                <input type="hidden" name="order_id" value="<?= e((int) ($order['id'] ?? 0)) ?>">
+                                                <input type="hidden" name="new_status" value="shipping">
+                                                <button type="submit" name="update_order_status" class="btn btn-success">Đang giao dịch</button>
+                                            </form>
+                                        <?php elseif (($order['status'] ?? '') === 'shipping'): ?>
+                                            <form method="post" class="d-inline" onsubmit="return confirm('Hoàn tất đơn này và đánh dấu xe đã bán?');">
+                                                <input type="hidden" name="order_id" value="<?= e((int) ($order['id'] ?? 0)) ?>">
+                                                <input type="hidden" name="new_status" value="completed">
+                                                <button type="submit" name="update_order_status" class="btn btn-success">Hoàn tất</button>
+                                            </form>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             </article>
