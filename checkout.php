@@ -112,55 +112,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $error === '') {
     } elseif (!in_array($formData['payment_method'], ['cash', 'transfer'], true)) {
         $error = 'Phương thức thanh toán không hợp lệ.';
     } else {
-        $totalAmount = (float)($bike['price'] ?? 0);
-        $noteParts = [
-            'Phương thức liên hệ: ' . $formData['contact_method'],
-            'Phương thức thanh toán: ' . $formData['payment_method'],
-        ];
-
-        if ($formData['buyer_note'] !== '') {
-            $noteParts[] = 'Ghi chú: ' . $formData['buyer_note'];
-        }
-
-        $note = implode("\n", $noteParts);
-
         $insertSql = "
             INSERT INTO orders (
-                buyer_id,
+                order_code,
                 bike_id,
-                quantity,
-                total_amount,
+                buyer_id,
+                seller_id,
+                offered_price,
+                contact_method,
+                meeting_location,
+                buyer_note,
                 status,
-                shipping_name,
-                shipping_phone,
-                shipping_address,
-                note
-            ) VALUES (?, ?, 1, ?, 'pending', ?, ?, ?, ?)
+                payment_method,
+                payment_status,
+                quantity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'unpaid', 1)
         ";
 
         $insertStmt = $conn->prepare($insertSql);
 
         if ($insertStmt) {
+            $orderCode = 'ORD' . date('YmdHis') . random_int(100, 999);
+            $sellerId = (int)($bike['seller_id'] ?? 0);
+            $offeredPrice = (float)($bike['price'] ?? 0);
+
             $insertStmt->bind_param(
-                'iidssss',
-                $buyerId,
+                'siiidssss',
+                $orderCode,
                 $bikeId,
-                $totalAmount,
-                $buyerName,
-                $buyerPhone,
+                $buyerId,
+                $sellerId,
+                $offeredPrice,
+                $formData['contact_method'],
                 $formData['meeting_location'],
-                $note
+                $formData['buyer_note'],
+                $formData['payment_method']
             );
 
             if ($insertStmt->execute()) {
                 redirect('buyer/my-orders.php');
             } else {
-                $error = 'Không thể tạo đơn hàng lúc này. Vui lòng thử lại sau.';
+                $error = 'Khong the tao don hang luc nay. Vui long thu lai sau: ' . $insertStmt->error;
             }
 
             $insertStmt->close();
         } else {
-            $error = 'Không thể xử lý đơn hàng lúc này.';
+            $error = 'Khong the xu ly don hang luc nay: ' . $conn->error;
         }
     }
 }
