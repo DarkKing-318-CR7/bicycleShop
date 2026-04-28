@@ -100,9 +100,12 @@ $pendingBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes WHERE sta
 $totalOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders");
 $totalCategories = fetchCount($conn, "SELECT COUNT(*) AS total FROM categories");
 $totalBrands = fetchCount($conn, "SELECT COUNT(*) AS total FROM brands");
+$rejectedBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes WHERE status = 'rejected'");
+$approvedTodayBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes WHERE status = 'approved' AND DATE(updated_at) = CURDATE()");
+$newUsersToday = fetchCount($conn, "SELECT COUNT(*) AS total FROM users WHERE DATE(created_at) = CURDATE()");
 
 
-$pendingBikeList = [];
+$recentBikeList = [];
 $bikeResult = $conn->query("
     SELECT 
         b.id,
@@ -121,17 +124,83 @@ $bikeResult = $conn->query("
         u.phone AS seller_phone
     FROM bikes b
     LEFT JOIN users u ON b.seller_id = u.id
-    WHERE b.status = 'pending'
     ORDER BY b.created_at DESC
     LIMIT 10
 ");
 
 if ($bikeResult) {
     while ($row = $bikeResult->fetch_assoc()) {
-        $pendingBikeList[] = $row;
+        $recentBikeList[] = $row;
     }
 }
 
+$recentUserList = [];
+$userResult = $conn->query("
+    SELECT full_name, email, role, status, created_at
+    FROM users
+    ORDER BY created_at DESC
+    LIMIT 4
+");
+
+if ($userResult) {
+    while ($row = $userResult->fetch_assoc()) {
+        $recentUserList[] = $row;
+    }
+}
+
+function bikeStatusText(string $status): string
+{
+    return match ($status) {
+        'pending' => 'Chờ duyệt',
+        'approved' => 'Đã duyệt',
+        'rejected' => 'Từ chối',
+        'sold' => 'Đã bán',
+        'completed' => 'Hoàn tất',
+        default => $status
+    };
+}
+
+function bikeStatusClass(string $status): string
+{
+    return match ($status) {
+        'pending' => 'status-pending',
+        'approved' => 'status-approved',
+        'rejected' => 'status-rejected',
+        'sold', 'completed' => 'status-sold',
+        default => 'status-pending'
+    };
+}
+
+function userRoleText(string $role): string
+{
+    return match ($role) {
+        'admin' => 'Admin',
+        'seller' => 'Người bán',
+        'buyer' => 'Người mua',
+        'inspector' => 'Kiểm định viên',
+        default => $role
+    };
+}
+
+function userStatusText(string $status): string
+{
+    return match ($status) {
+        'active' => 'Hoạt động',
+        'inactive' => 'Không hoạt động',
+        'banned' => 'Bị khóa',
+        default => $status
+    };
+}
+
+function userStatusClass(string $status): string
+{
+    return match ($status) {
+        'active' => 'status-approved',
+        'inactive' => 'status-pending',
+        'banned' => 'status-rejected',
+        default => 'status-pending'
+    };
+}
 
 $adminInitials = getInitials($adminName);
 ?>
@@ -261,15 +330,16 @@ $adminInitials = getInitials($adminName);
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <?php if (!empty($pendingBikeList)): ?>
-                                                <?php foreach ($pendingBikeList as $bike): ?>
+                                            <?php if (!empty($recentBikeList)): ?>
+                                                <?php foreach ($recentBikeList as $bike): ?>
+                                                    <?php $bikeStatus = $bike['status'] ?? ''; ?>
                                                     <tr>
                                                         <td><?= e($bike['title']) ?></td>
                                                         <td><?= e($bike['seller_name'] ?? 'Không rõ') ?></td>
                                                         <td><?= e(number_format((float) $bike['price'], 0, ',', '.')) ?>đ</td>
                                                         <td><?= e(date('d/m/Y', strtotime($bike['created_at']))) ?></td>
                                                         <td>
-                                                            <span class="status-badge status-pending">Chờ duyệt</span>
+                                                            <span class="status-badge <?= e(bikeStatusClass($bikeStatus)) ?>"><?= e(bikeStatusText($bikeStatus)) ?></span>
                                                         </td>
                                                         <td>
                                                             <div class="d-flex flex-wrap gap-2">
@@ -281,28 +351,30 @@ $adminInitials = getInitials($adminName);
                                                                     Xem
                                                                 </button>
 
-                                                                <form method="post" class="d-inline">
-                                                                    <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
-                                                                    <input type="hidden" name="action_type" value="approve">
-                                                                    <button type="submit" name="moderate_bike" class="btn btn-sm btn-success">
-                                                                        Duyệt
-                                                                    </button>
-                                                                </form>
+                                                                <?php if ($bikeStatus === 'pending'): ?>
+                                                                    <form method="post" class="d-inline">
+                                                                        <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
+                                                                        <input type="hidden" name="action_type" value="approve">
+                                                                        <button type="submit" name="moderate_bike" class="btn btn-sm btn-success">
+                                                                            Duyệt
+                                                                        </button>
+                                                                    </form>
 
-                                                                <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn từ chối tin đăng này?');">
-                                                                    <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
-                                                                    <input type="hidden" name="action_type" value="reject">
-                                                                    <button type="submit" name="moderate_bike" class="btn btn-sm btn-outline-danger">
-                                                                        Từ chối
-                                                                    </button>
-                                                                </form>
+                                                                    <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn từ chối tin đăng này?');">
+                                                                        <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
+                                                                        <input type="hidden" name="action_type" value="reject">
+                                                                        <button type="submit" name="moderate_bike" class="btn btn-sm btn-outline-danger">
+                                                                            Từ chối
+                                                                        </button>
+                                                                    </form>
+                                                                <?php endif; ?>
                                                             </div>
                                                         </td>
                                                     </tr>
                                                 <?php endforeach; ?>
                                             <?php else: ?>
                                                 <tr>
-                                                    <td colspan="6" class="text-center text-muted py-4">Hiện không có tin đăng nào đang chờ duyệt.</td>
+                                                    <td colspan="6" class="text-center text-muted py-4">Hiện chưa có tin đăng nào.</td>
                                                 </tr>
                                             <?php endif; ?>
                                         </tbody>
@@ -315,13 +387,13 @@ $adminInitials = getInitials($adminName);
                             <div class="content-card">
                                 <h2 class="section-heading">Tổng quan kiểm duyệt</h2>
                                 <div class="mini-status">
-                                    <div class="mini-status-item"><strong>12 tin đang chờ duyệt</strong>
+                                    <div class="mini-status-item"><strong><?= e(number_format($pendingBikes, 0, ',', '.')) ?> tin đang chờ duyệt</strong>
                                         <div class="text-muted mt-1">Cần xem xét để xuất hiện công khai trên marketplace.</div>
                                     </div>
-                                    <div class="mini-status-item"><strong>5 tin bị từ chối</strong>
+                                    <div class="mini-status-item"><strong><?= e(number_format($rejectedBikes, 0, ',', '.')) ?> tin bị từ chối</strong>
                                         <div class="text-muted mt-1">Nên kiểm tra lý do và gửi hướng dẫn chỉnh sửa cho người bán.</div>
                                     </div>
-                                    <div class="mini-status-item"><strong>9 tin được duyệt hôm nay</strong>
+                                    <div class="mini-status-item"><strong><?= e(number_format($approvedTodayBikes, 0, ',', '.')) ?> tin được duyệt hôm nay</strong>
                                         <div class="text-muted mt-1">Khối lượng duyệt hôm nay đang ở mức ổn định.</div>
                                     </div>
                                 </div>
@@ -344,34 +416,22 @@ $adminInitials = getInitials($adminName);
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr>
-                                                <td>Nguyễn Hoàng Phúc</td>
-                                                <td>phuc.nguyen@email.com</td>
-                                                <td>Người bán</td>
-                                                <td>08/04/2026</td>
-                                                <td><span class="status-badge status-approved">Hoạt động</span></td>
-                                            </tr>
-                                            <tr>
-                                                <td>Trần Bích Ngọc</td>
-                                                <td>bichngoc@mail.com</td>
-                                                <td>Người mua</td>
-                                                <td>08/04/2026</td>
-                                                <td><span class="status-badge status-approved">Hoạt động</span></td>
-                                            </tr>
-                                            <tr>
-                                                <td>Lê Thanh Tùng</td>
-                                                <td>thanhtung@mail.com</td>
-                                                <td>Người bán</td>
-                                                <td>07/04/2026</td>
-                                                <td><span class="status-badge status-pending">Chờ xác minh</span></td>
-                                            </tr>
-                                            <tr>
-                                                <td>Phạm Anh Duy</td>
-                                                <td>anhduy@email.com</td>
-                                                <td>Người mua</td>
-                                                <td>07/04/2026</td>
-                                                <td><span class="status-badge status-approved">Hoạt động</span></td>
-                                            </tr>
+                                            <?php if (!empty($recentUserList)): ?>
+                                                <?php foreach ($recentUserList as $user): ?>
+                                                    <?php $userStatus = $user['status'] ?? ''; ?>
+                                                    <tr>
+                                                        <td><?= e($user['full_name']) ?></td>
+                                                        <td><?= e($user['email']) ?></td>
+                                                        <td><?= e(userRoleText($user['role'] ?? '')) ?></td>
+                                                        <td><?= e(date('d/m/Y', strtotime($user['created_at']))) ?></td>
+                                                        <td><span class="status-badge <?= e(userStatusClass($userStatus)) ?>"><?= e(userStatusText($userStatus)) ?></span></td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            <?php else: ?>
+                                                <tr>
+                                                    <td colspan="5" class="text-center text-muted py-4">Hiện chưa có người dùng nào.</td>
+                                                </tr>
+                                            <?php endif; ?>
                                         </tbody>
                                     </table>
                                 </div>
@@ -383,7 +443,7 @@ $adminInitials = getInitials($adminName);
                                 <h2 class="section-heading">Thao tác nhanh</h2>
                                 <div class="quick-grid">
                                     <a href="bikes.php" class="btn btn-success">Xem tất cả tin đăng</a>
-                                    <a href="#" class="btn btn-outline-dark">Duyệt tin mới</a>
+                                    <a href="bikes.php?status=pending" class="btn btn-outline-dark">Duyệt tin mới</a>
                                     <a href="users.php" class="btn btn-outline-dark">Quản lý người dùng</a>
                                     <a href="statistics.php" class="btn btn-outline-success">Xem báo cáo thống kê</a>
                                 </div>
@@ -412,8 +472,8 @@ $adminInitials = getInitials($adminName);
                             <div class="notice-card">
                                 <h2 class="section-heading">Thông báo hệ thống</h2>
                                 <div class="notice-list">
-                                    <div class="notice-item">Có 12 tin đăng đang chờ duyệt.</div>
-                                    <div class="notice-item">3 tài khoản mới đăng ký hôm nay.</div>
+                                    <div class="notice-item">Có <?= e(number_format($pendingBikes, 0, ',', '.')) ?> tin đăng đang chờ duyệt.</div>
+                                    <div class="notice-item"><?= e(number_format($newUsersToday, 0, ',', '.')) ?> tài khoản mới đăng ký hôm nay.</div>
                                     <div class="notice-item">Hệ thống hoạt động ổn định.</div>
                                 </div>
                             </div>
@@ -429,8 +489,8 @@ $adminInitials = getInitials($adminName);
 
 
 
-    <?php if (!empty($pendingBikeList)): ?>
-        <?php foreach ($pendingBikeList as $bike): ?>
+    <?php if (!empty($recentBikeList)): ?>
+        <?php foreach ($recentBikeList as $bike): ?>
             <div class="modal fade" id="bikeModal<?= (int) $bike['id'] ?>" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-lg modal-dialog-scrollable">
                     <div class="modal-content">
@@ -491,17 +551,19 @@ $adminInitials = getInitials($adminName);
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <form method="post" class="d-inline">
-                                <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
-                                <input type="hidden" name="action_type" value="approve">
-                                <button type="submit" name="moderate_bike" class="btn btn-success">Duyệt</button>
-                            </form>
+                            <?php if (($bike['status'] ?? '') === 'pending'): ?>
+                                <form method="post" class="d-inline">
+                                    <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
+                                    <input type="hidden" name="action_type" value="approve">
+                                    <button type="submit" name="moderate_bike" class="btn btn-success">Duyệt</button>
+                                </form>
 
-                            <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn từ chối tin đăng này?');">
-                                <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
-                                <input type="hidden" name="action_type" value="reject">
-                                <button type="submit" name="moderate_bike" class="btn btn-outline-danger">Từ chối</button>
-                            </form>
+                                <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn từ chối tin đăng này?');">
+                                    <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
+                                    <input type="hidden" name="action_type" value="reject">
+                                    <button type="submit" name="moderate_bike" class="btn btn-outline-danger">Từ chối</button>
+                                </form>
+                            <?php endif; ?>
 
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
                         </div>

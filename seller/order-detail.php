@@ -43,7 +43,7 @@ function getOrderStatusMeta(string $status): array
     switch ($status) {
         case 'confirmed':
             return ['class' => 'status-approved', 'label' => 'Đã xác nhận'];
-        case 'shipping':
+        case 'in_progress':
             return ['class' => 'status-approved', 'label' => 'Đang giao dịch'];
         case 'completed':
             return ['class' => 'status-sold', 'label' => 'Hoàn tất'];
@@ -72,6 +72,10 @@ function getOrderAmountColumn(mysqli $conn): string
         $result->free();
     }
 
+    if (in_array('offered_price', $columns, true)) {
+        return 'offered_price';
+    }
+
     if (in_array('total_price', $columns, true)) {
         return 'total_price';
     }
@@ -83,7 +87,7 @@ $amountColumn = getOrderAmountColumn($conn);
 
 function updateSellerOrderStatus(mysqli $conn, int $orderId, int $sellerId, string $newStatus): bool
 {
-    if (!in_array($newStatus, ['pending', 'confirmed', 'shipping', 'completed', 'cancelled'], true)) {
+    if (!in_array($newStatus, ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'], true)) {
         return false;
     }
 
@@ -139,7 +143,7 @@ function updateSellerOrderStatus(mysqli $conn, int $orderId, int $sellerId, stri
                 ) AS completed_order
             )
               AND id <> ?
-              AND status IN ('pending', 'confirmed', 'shipping')
+              AND status IN ('pending', 'confirmed', 'in_progress')
         ");
 
         if (!$cancelOtherStmt) {
@@ -173,12 +177,14 @@ $order = null;
 $sql = "
     SELECT
         o.id,
+        o.order_code,
         o.status,
         o.created_at,
-        o.shipping_name,
-        o.shipping_phone,
-        o.shipping_address,
-        o.note,
+        o.contact_method,
+        o.meeting_location,
+        o.buyer_note,
+        o.payment_method,
+        o.payment_status,
         o.{$amountColumn} AS order_total,
         b.id AS bike_id,
         b.title AS bike_title,
@@ -187,12 +193,12 @@ $sql = "
         b.frame_size,
         b.wheel_size,
         b.color,
-        COALESCE(c.name, 'Danh mục khác') AS category_name,
+        COALESCE(c.name, 'Danh m?c kh?c') AS category_name,
         COALESCE(br.name, '') AS brand_name,
         COALESCE(img.image_url, ?) AS image_url,
-        COALESCE(u.full_name, 'Người mua') AS buyer_name,
-        COALESCE(u.phone, 'Đang cập nhật') AS buyer_phone,
-        COALESCE(u.email, 'Đang cập nhật') AS buyer_email
+        COALESCE(u.full_name, 'Ng??i mua') AS buyer_name,
+        COALESCE(u.phone, '?ang c?p nh?t') AS buyer_phone,
+        COALESCE(u.email, '?ang c?p nh?t') AS buyer_email
     FROM orders o
     INNER JOIN bikes b ON b.id = o.bike_id
     LEFT JOIN users u ON u.id = o.buyer_id
@@ -281,7 +287,7 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                         <h1 class="section-title text-white mb-2">Chi tiết đơn mua</h1>
                         <p class="mb-0 text-white-50">Xem thông tin đơn hàng được gửi tới xe của bạn.</p>
                     </div>
-                    <span class="status-badge <?= e($statusMeta['class']) ?> bg-white border-0">Mã đơn: #<?= e((int) ($order['id'] ?? 0)) ?></span>
+                    <span class="status-badge <?= e($statusMeta['class']) ?> bg-white border-0">Mã đơn: <?= e($order['order_code'] ?? ('#' . (int) ($order['id'] ?? 0))) ?></span>
                 </div>
             </div>
         </section>
@@ -346,13 +352,14 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                     <section class="content-card mb-4">
                         <h2 class="section-heading">Thông tin giao dịch</h2>
                         <div class="meta-grid mb-4">
-                            <div class="meta-item"><small>Mã đơn</small><strong>#<?= e((int) ($order['id'] ?? 0)) ?></strong></div>
+                            <div class="meta-item"><small>Mã đơn</small><strong><?= e($order['order_code'] ?? ('#' . (int) ($order['id'] ?? 0))) ?></strong></div>
                             <div class="meta-item"><small>Ngày gửi</small><strong><?= e(formatDateVi($order['created_at'] ?? null)) ?></strong></div>
                             <div class="meta-item"><small>Trạng thái hiện tại</small><strong><?= e($statusMeta['label']) ?></strong></div>
-                            <div class="meta-item"><small>Người nhận</small><strong><?= e($order['shipping_name'] !== '' ? $order['shipping_name'] : 'Đang cập nhật') ?></strong></div>
-                            <div class="meta-item"><small>Số điện thoại</small><strong><?= e($order['shipping_phone'] !== '' ? $order['shipping_phone'] : 'Đang cập nhật') ?></strong></div>
-                            <div class="meta-item"><small>Địa chỉ giao hàng</small><strong><?= e($order['shipping_address'] !== '' ? $order['shipping_address'] : 'Đang cập nhật') ?></strong></div>
-                            <div class="meta-item"><small>Ghi chú</small><strong><?= e($order['note'] !== '' ? $order['note'] : 'Không có ghi chú') ?></strong></div>
+                            <div class="meta-item"><small>Phương thức liên hệ</small><strong><?= e($order['contact_method'] !== "" ? $order['contact_method'] : "Đang cập nhật") ?></strong></div>
+                            <div class="meta-item"><small>Phương thức thanh toán</small><strong><?= e($order['payment_method'] !== "" ? $order['payment_method'] : "Đang cập nhật") ?></strong></div>
+                            <div class="meta-item"><small>Địa điểm giao dịch</small><strong><?= e($order['meeting_location'] !== "" ? $order['meeting_location'] : "Đang cập nhật") ?></strong></div>
+                            <div class="meta-item"><small>Thanh toán</small><strong><?= e($order['payment_status'] !== "" ? $order['payment_status'] : "Đang cập nhật") ?></strong></div>
+                            <div class="meta-item"><small>Ghi chú</small><strong><?= e($order['buyer_note'] !== "" ? $order['buyer_note'] : "Không có ghi chú") ?></strong></div>
                         </div>
                     </section>
                 </div>
@@ -398,10 +405,10 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                                 </form>
                             <?php elseif (($order['status'] ?? '') === 'confirmed'): ?>
                                 <form method="post">
-                                    <input type="hidden" name="new_status" value="shipping">
+                                    <input type="hidden" name="new_status" value="in_progress">
                                     <button type="submit" name="update_order_status" class="btn btn-success w-100">Chuyển sang đang giao dịch</button>
                                 </form>
-                            <?php elseif (($order['status'] ?? '') === 'shipping'): ?>
+                            <?php elseif (($order['status'] ?? '') === 'in_progress'): ?>
                                 <form method="post" onsubmit="return confirm('Hoàn tất đơn này và đánh dấu xe đã bán?');">
                                     <input type="hidden" name="new_status" value="completed">
                                     <button type="submit" name="update_order_status" class="btn btn-success w-100">Hoàn tất đơn</button>

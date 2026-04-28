@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order_status']
             $newStatus = 'cancelled';
         }
 
-        if (in_array($newStatus, ['pending', 'confirmed', 'shipping', 'completed', 'cancelled'], true)) {
+        if (in_array($newStatus, ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'], true)) {
             $stmt = $conn->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE id = ?");
             $stmt->bind_param("si", $newStatus, $orderId);
 
@@ -97,7 +97,36 @@ function fetchCount(mysqli $conn, string $sql, int $fallback = 0): int
     return isset($row['total']) ? (int)$row['total'] : $fallback;
 }
 
+function getOrderAmountColumn(mysqli $conn): string
+{
+    $columns = [];
+    $result = $conn->query('SHOW COLUMNS FROM orders');
+
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $field = $row['Field'] ?? '';
+
+            if ($field !== '') {
+                $columns[] = $field;
+            }
+        }
+
+        $result->free();
+    }
+
+    if (in_array('offered_price', $columns, true)) {
+        return 'offered_price';
+    }
+
+    if (in_array('total_price', $columns, true)) {
+        return 'total_price';
+    }
+
+    return 'total_amount';
+}
+
 $adminInitials = getInitials($adminName);
+$amountColumn = getOrderAmountColumn($conn);
 
 /**
  * THỐNG KÊ ĐƠN HÀNG
@@ -105,7 +134,7 @@ $adminInitials = getInitials($adminName);
 $totalOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders");
 $pendingOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders WHERE status = 'pending'");
 $confirmedOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders WHERE status = 'confirmed'");
-$shippingOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders WHERE status = 'shipping'");
+$shippingOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders WHERE status = 'in_progress'");
 $completedOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders WHERE status = 'completed'");
 $cancelledOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders WHERE status = 'cancelled'");
 
@@ -130,12 +159,14 @@ $sql = "
         o.id,
         o.buyer_id,
         o.bike_id,
-        o.total_amount,
+        o.order_code,
+        o.{$amountColumn} AS total_amount,
         o.status,
-        o.shipping_name,
-        o.shipping_phone,
-        o.shipping_address,
-        o.note,
+        o.contact_method,
+        o.meeting_location,
+        o.buyer_note,
+        o.payment_method,
+        o.payment_status,
         o.created_at,
         b.title AS bike_title,
         buyer.full_name AS buyer_name,
@@ -186,10 +217,10 @@ switch ($sortFilter) {
         $sql .= " ORDER BY o.created_at ASC";
         break;
     case 'price_asc':
-        $sql .= " ORDER BY o.total_amount ASC";
+        $sql .= " ORDER BY o.{$amountColumn} ASC";
         break;
     case 'price_desc':
-        $sql .= " ORDER BY o.total_amount DESC";
+        $sql .= " ORDER BY o.{$amountColumn} DESC";
         break;
     default:
         $sql .= " ORDER BY o.created_at DESC";
@@ -344,7 +375,7 @@ if ($stmt) {
                                             <option value="">Tất cả trạng thái</option>
                                             <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Chờ xác nhận</option>
                                             <option value="confirmed" <?= $statusFilter === 'confirmed' ? 'selected' : '' ?>>Đã xác nhận</option>
-                                            <option value="shipping" <?= $statusFilter === 'shipping' ? 'selected' : '' ?>>Đang giao dịch</option>
+                                            <option value="in_progress" <?= $statusFilter === 'in_progress' ? 'selected' : '' ?>>Đang giao dịch</option>
                                             <option value="completed" <?= $statusFilter === 'completed' ? 'selected' : '' ?>>Hoàn tất</option>
                                             <option value="cancelled" <?= $statusFilter === 'cancelled' ? 'selected' : '' ?>>Đã hủy</option>
                                         </select>
@@ -410,7 +441,7 @@ if ($stmt) {
                                             $statusText = match ($order['status']) {
                                                 'pending' => 'Chờ xác nhận',
                                                 'confirmed' => 'Đã xác nhận',
-                                                'shipping' => 'Đang giao dịch',
+                                                'in_progress' => 'Đang giao dịch',
                                                 'completed' => 'Hoàn tất',
                                                 'cancelled' => 'Đã hủy',
                                                 default => $order['status']
@@ -419,7 +450,7 @@ if ($stmt) {
                                             $statusClass = match ($order['status']) {
                                                 'pending' => 'status-pending',
                                                 'confirmed' => 'status-approved',
-                                                'shipping' => 'status-pending',
+                                                'in_progress' => 'status-pending',
                                                 'completed' => 'status-approved',
                                                 'cancelled' => 'status-rejected',
                                                 default => 'status-pending'
@@ -510,7 +541,7 @@ if ($stmt) {
             $statusText = match ($order['status']) {
                 'pending' => 'Chờ xác nhận',
                 'confirmed' => 'Đã xác nhận',
-                'shipping' => 'Đang giao dịch',
+                'in_progress' => 'Đang giao dịch',
                 'completed' => 'Hoàn tất',
                 'cancelled' => 'Đã hủy',
                 default => $order['status']
@@ -551,7 +582,7 @@ if ($stmt) {
                                 </div>
                                 <div class="col-md-6">
                                     <strong>Số điện thoại:</strong>
-                                    <div><?= e($order['shipping_phone'] ?: ($order['buyer_phone'] ?? '')) ?></div>
+                                    <div><?= e($order['buyer_phone'] ?? '') ?></div>
                                 </div>
                                 <div class="col-md-6">
                                     <strong>Người bán:</strong>
@@ -559,15 +590,15 @@ if ($stmt) {
                                 </div>
                                 <div class="col-12">
                                     <strong>Người nhận:</strong>
-                                    <div><?= e($order['shipping_name'] ?? '') ?></div>
+                                    <div><?= e($order['contact_method'] ?? '') ?></div>
                                 </div>
                                 <div class="col-12">
                                     <strong>Địa chỉ giao hàng:</strong>
-                                    <div><?= e($order['shipping_address'] ?? '') ?></div>
+                                    <div><?= e($order['meeting_location'] ?? '') ?></div>
                                 </div>
                                 <div class="col-12">
                                     <strong>Ghi chú:</strong>
-                                    <div><?= nl2br(e($order['note'] ?? '')) ?></div>
+                                    <div><?= nl2br(e($order['buyer_note'] ?? '')) ?></div>
                                 </div>
                                 <div class="col-12">
                                     <strong>Ngày tạo:</strong>
@@ -610,7 +641,7 @@ if ($stmt) {
                                     <select name="new_status" class="form-select" required>
                                         <option value="pending" <?= $order['status'] === 'pending' ? 'selected' : '' ?>>Chờ xác nhận</option>
                                         <option value="confirmed" <?= $order['status'] === 'confirmed' ? 'selected' : '' ?>>Đã xác nhận</option>
-                                        <option value="shipping" <?= $order['status'] === 'shipping' ? 'selected' : '' ?>>Đang giao dịch</option>
+                                        <option value="in_progress" <?= $order['status'] === 'in_progress' ? 'selected' : '' ?>>Đang giao dịch</option>
                                         <option value="completed" <?= $order['status'] === 'completed' ? 'selected' : '' ?>>Hoàn tất</option>
                                         <option value="cancelled" <?= $order['status'] === 'cancelled' ? 'selected' : '' ?>>Đã hủy</option>
                                     </select>

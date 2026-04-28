@@ -43,7 +43,7 @@ function getOrderStatusMeta(string $status): array
     switch ($status) {
         case 'confirmed':
             return ['class' => 'status-approved', 'label' => 'Đã xác nhận'];
-        case 'shipping':
+        case 'in_progress':
             return ['class' => 'status-approved', 'label' => 'Đang giao dịch'];
         case 'completed':
             return ['class' => 'status-sold', 'label' => 'Hoàn tất'];
@@ -68,8 +68,15 @@ function getConditionLabel(string $condition): string
     }
 }
 
-function buildOrderCode(int $id): string
+function buildOrderCode(array $order): string
 {
+    $orderCode = trim((string) ($order['order_code'] ?? ''));
+
+    if ($orderCode !== '') {
+        return $orderCode;
+    }
+
+    $id = (int) ($order['id'] ?? 0);
     return 'ORD-' . date('Y') . '-' . str_pad((string) $id, 3, '0', STR_PAD_LEFT);
 }
 
@@ -104,14 +111,16 @@ $order = null;
 $sql = "
     SELECT
         o.id,
+        o.order_code,
         o.bike_id,
         o.quantity,
-        o.total_amount,
+        o.offered_price,
+        o.contact_method,
+        o.meeting_location,
+        o.buyer_note,
         o.status,
-        o.shipping_name,
-        o.shipping_phone,
-        o.shipping_address,
-        o.note,
+        o.payment_method,
+        o.payment_status,
         o.created_at,
         o.updated_at,
         b.title AS bike_title,
@@ -158,8 +167,8 @@ if (!$order) {
 }
 
 $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
-$orderCode = buildOrderCode((int) ($order['id'] ?? 0));
-$note = trim((string) ($order['note'] ?? ''));
+$orderCode = buildOrderCode($order);
+$note = trim((string) ($order['buyer_note'] ?? ''));
 ?>
 <!DOCTYPE html>
 <html lang="vi">
@@ -246,7 +255,7 @@ $note = trim((string) ($order['note'] ?? ''));
                 <div class="col-md-6 col-xl-4">
                     <div class="stats-card">
                         <span class="stats-icon"><i class="bi bi-cash-stack"></i></span>
-                        <div><small>Tổng thanh toán</small><strong><?= e(formatPriceVnd($order['total_amount'] ?? 0)) ?></strong></div>
+                        <div><small>Tổng thanh toán</small><strong><?= e(formatPriceVnd($order['offered_price'] ?? 0)) ?></strong></div>
                     </div>
                 </div>
             </div>
@@ -278,14 +287,15 @@ $note = trim((string) ($order['note'] ?? ''));
                     <section class="content-card mb-4">
                         <h2 class="section-heading">Thông tin đơn mua</h2>
                         <div class="meta-grid mb-4">
-                            <div class="meta-item"><small>Mã đơn</small><strong><?= e($orderCode) ?></strong></div>
-                            <div class="meta-item"><small>Ngày đặt</small><strong><?= e(formatDateVi($order['created_at'] ?? null)) ?></strong></div>
-                            <div class="meta-item"><small>Trạng thái</small><strong><?= e($statusMeta['label']) ?></strong></div>
-                            <div class="meta-item"><small>Người nhận</small><strong><?= e($order['shipping_name'] ?: 'Đang cập nhật') ?></strong></div>
-                            <div class="meta-item"><small>Số điện thoại</small><strong><?= e($order['shipping_phone'] ?: 'Đang cập nhật') ?></strong></div>
-                            <div class="meta-item"><small>Địa điểm giao dịch</small><strong><?= e($order['shipping_address'] ?: 'Đang cập nhật') ?></strong></div>
-                            <div class="meta-item"><small>Số lượng</small><strong><?= e((int) ($order['quantity'] ?? 1)) ?></strong></div>
-                            <div class="meta-item"><small>Ghi chú</small><strong><?= nl2br(e($note !== '' ? $note : 'Không có ghi chú')) ?></strong></div>
+                            <div class="meta-item"><small>Mã đơn </small><strong><?= e($orderCode) ?></strong></div>
+                            <div class="meta-item"><small>Ngày đặt </small><strong><?= e(formatDateVi($order['created_at'] ?? null)) ?></strong></div>
+                            <div class="meta-item"><small>Trạng thái </small><strong><?= e($statusMeta['label']) ?></strong></div>
+                            <div class="meta-item"><small>Phương thức liên hệ </small><strong><?= e($order['contact_method'] ?: "Đang cập nhật") ?></strong></div>
+                            <div class="meta-item"><small>Phương thức thanh toán </small><strong><?= e($order['payment_method'] ?: "Đang cập nhật") ?></strong></div>
+                            <div class="meta-item"><small>Địa điểm giao dịch </small><strong><?= e($order['meeting_location'] ?: "Đang cập nhật") ?></strong></div>
+                            <div class="meta-item"><small>Số lượng </small><strong><?= e((int) ($order['quantity'] ?? 1)) ?></strong></div>
+                            <div class="meta-item"><small>Thanh toán </small><strong><?= e($order['payment_status'] ?: "Đang cập nhật") ?></strong></div>
+                            <div class="meta-item"><small>Ghi chú </small><strong><?= nl2br(e($note !== "" ? $note : "Không có ghi chú")) ?></strong></div>
                         </div>
                     </section>
                 </div>
@@ -314,7 +324,7 @@ $note = trim((string) ($order['note'] ?? ''));
                         </div>
                         <div class="d-flex justify-content-between align-items-center pt-3">
                             <span class="fw-semibold">Tổng cộng</span>
-                            <strong class="price mb-0"><?= e(formatPriceVnd($order['total_amount'] ?? 0)) ?></strong>
+                            <strong class="price mb-0"><?= e(formatPriceVnd($order['offered_price'] ?? 0)) ?></strong>
                         </div>
                     </section>
 

@@ -144,6 +144,48 @@ function uploadBikeImage(array $file, string $uploadDir, string $webPrefix): ?st
     return rtrim($webPrefix, '/') . '/' . $fileName;
 }
 
+function loadSettingValue(mysqli $conn, string $key, string $default): string
+{
+    try {
+        $stmt = $conn->prepare("SELECT setting_value FROM settings WHERE setting_key = ? LIMIT 1");
+        if (!$stmt) {
+            return $default;
+        }
+
+        $stmt->bind_param('s', $key);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $row = $result ? $result->fetch_assoc() : null;
+        $stmt->close();
+
+        return isset($row['setting_value']) ? (string) $row['setting_value'] : $default;
+    } catch (Throwable $error) {
+        return $default;
+    }
+}
+
+function hasSelectedBikeImage(): bool
+{
+    if (isset($_FILES['main_image']) && ($_FILES['main_image']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+        return true;
+    }
+
+    if (isset($_FILES['additional_images']['error']) && is_array($_FILES['additional_images']['error'])) {
+        foreach ($_FILES['additional_images']['error'] as $error) {
+            if ((int) $error === UPLOAD_ERR_OK) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+$requireApproval = loadSettingValue($conn, 'require_approval', '1') === '1';
+$minBikePrice = max(0, (int) loadSettingValue($conn, 'min_bike_price', '0'));
+$requireBikeImage = loadSettingValue($conn, 'require_bike_image', '0') === '1';
+$sellerDailyPostLimit = max(0, (int) loadSettingValue($conn, 'seller_daily_post_limit', '0'));
+
 $categoryResult = $conn->query("SELECT id, name FROM categories ORDER BY name ASC");
 if ($categoryResult) {
     while ($row = $categoryResult->fetch_assoc()) {
@@ -214,12 +256,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Vui lòng nhập giá bán.';
     } elseif ($normalizedPrice <= 0) {
         $errors[] = 'Giá bán phải là số hợp lệ và lớn hơn 0.';
+    } elseif ($minBikePrice > 0 && $normalizedPrice < $minBikePrice) {
+        $errors[] = 'Giá bán phải từ ' . number_format($minBikePrice, 0, ',', '.') . 'đ trở lên.';
     }
 
     if (!in_array($formData['condition_status'], ['new', 'like_new', 'used'], true)) {
         $formData['condition_status'] = 'used';
     }
 
+    if ($requireBikeImage && !hasSelectedBikeImage()) {
+        $errors[] = 'Vui lòng upload ít nhất một ảnh xe.';
+    }
+
+    if ($sellerDailyPostLimit > 0) {
+        $limitStmt = $conn->prepare("SELECT COUNT(*) AS total FROM bikes WHERE seller_id = ? AND DATE(created_at) = CURDATE()");
+        if ($limitStmt) {
+            $limitStmt->bind_param('i', $sellerId);
+            $limitStmt->execute();
+            $limitResult = $limitStmt->get_result();
+            $limitRow = $limitResult ? $limitResult->fetch_assoc() : null;
+            $postedToday = (int) ($limitRow['total'] ?? 0);
+            $limitStmt->close();
+
+            if ($postedToday >= $sellerDailyPostLimit) {
+                $errors[] = 'Bạn đã đạt giới hạn ' . number_format($sellerDailyPostLimit, 0, ',', '.') . ' tin đăng trong ngày.';
+            }
+        }
+    }
 
     if ($formData['description'] === '' && $formData['short_description'] === '') {
         $errors[] = 'Vui lòng nhập mô tả cho tin đăng.';
@@ -244,15 +307,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 color,
                 location,
                 status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ";
         $insertStmt = $conn->prepare($insertSql);
 
         if ($insertStmt) {
             $categoryId = (int) $formData['category_id'];
             $brandId = (int) $formData['brand_id'];
+            $newBikeStatus = $requireApproval ? 'pending' : 'approved';
             $insertStmt->bind_param(
-                'iiisssdsssss',
+                'iiisssdssssss',
                 $sellerId,
                 $categoryId,
                 $brandId,
@@ -264,7 +328,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $formData['frame_size'],
                 $formData['wheel_size'],
                 $formData['color'],
-                $formData['location']
+                $formData['location'],
+                $newBikeStatus
             );
 
             if ($insertStmt->execute()) {
@@ -320,28 +385,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                $success = 'Đăng tin thành công. Tin đăng của bạn đang chờ kiểm duyệt.';
-                $formData = [
-                    'title' => '',
-                    'brand_id' => '',
-                    'category_id' => '',
-                    'price' => '',
-                    'condition_status' => 'new',
-                    'location' => '',
-                    'year' => '',
-                    'frame_size' => '',
-                    'wheel_size' => '',
-                    'frame_material' => '',
-                    'drivetrain' => '',
-                    'brake_type' => '',
-                    'color' => '',
-                    'short_description' => '',
-                    'description' => '',
-                    'seller_name' => $sellerName,
-                    'seller_phone' => $sellerPhone,
-                    'seller_email' => $sellerEmail,
-                    'contact_method' => 'phone',
-                ];
+                if ($requireBikeImage && empty($uploadedImages)) {
+                    $deleteStmt = $conn->prepare("DELETE FROM bikes WHERE id = ? AND seller_id = ?");
+                    if ($deleteStmt) {
+                        $deleteStmt->bind_param('ii', $bikeId, $sellerId);
+                        $deleteStmt->execute();
+                        $deleteStmt->close();
+                    }
+                    $errors[] = 'Không thể upload ảnh xe. Vui lòng kiểm tra định dạng ảnh và thử lại.';
+                } else {
+                    $success = $newBikeStatus === 'pending'
+                        ? 'Đăng tin thành công. Tin đăng của bạn đang chờ kiểm duyệt.'
+                        : 'Đăng tin thành công. Tin đăng đã được hiển thị trên marketplace.';
+                }
+
+                if ($success !== '') {
+                    $formData = [
+                        'title' => '',
+                        'brand_id' => '',
+                        'category_id' => '',
+                        'price' => '',
+                        'condition_status' => 'new',
+                        'location' => '',
+                        'year' => '',
+                        'frame_size' => '',
+                        'wheel_size' => '',
+                        'frame_material' => '',
+                        'drivetrain' => '',
+                        'brake_type' => '',
+                        'color' => '',
+                        'short_description' => '',
+                        'description' => '',
+                        'seller_name' => $sellerName,
+                        'seller_phone' => $sellerPhone,
+                        'seller_email' => $sellerEmail,
+                        'contact_method' => 'phone',
+                    ];
+                }
             } else {
                 $errors[] = 'Không thể tạo tin đăng lúc này. Vui lòng thử lại sau.';
             }
