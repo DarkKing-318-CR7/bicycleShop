@@ -6,25 +6,29 @@ require_once __DIR__ . '/../includes/functions.php';
 requireRole('buyer');
 
 $currentUser = currentUser();
+$isLoggedIn = isLoggedIn();
+$userRole = $currentUser['role'] ?? '';
 $buyerId = (int) ($currentUser['id'] ?? 0);
-$buyerName = $currentUser['full_name'] ?? 'Tài khoản';
-$buyerEmail = $currentUser['email'] ?? '';
+$userName = $currentUser['full_name'] ?? 'T?i kho?n';
+$buyerName = $userName;
 $fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
 
 $keyword = trim($_GET['keyword'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
 $sort = trim($_GET['sort'] ?? 'newest');
-$contactSent = $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['contact_form']);
 
 $allowedStatuses = ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'];
+$allowedSorts = ['newest', 'oldest', 'price_desc', 'price_asc'];
+
 if (!in_array($statusFilter, $allowedStatuses, true)) {
     $statusFilter = '';
 }
 
-$allowedSorts = ['newest', 'oldest', 'price_desc', 'price_asc'];
 if (!in_array($sort, $allowedSorts, true)) {
     $sort = 'newest';
 }
+
+$orders = [];
 
 function formatPriceVnd($price): string
 {
@@ -38,11 +42,12 @@ function formatDateVi(?string $date): string
     }
 
     $timestamp = strtotime($date);
+
     if ($timestamp === false) {
         return 'Đang cập nhật';
     }
 
-    return date('d/m/Y', $timestamp);
+    return date('d/m/Y H:i', $timestamp);
 }
 
 function getOrderStatusMeta(string $status): array
@@ -62,80 +67,54 @@ function getOrderStatusMeta(string $status): array
     }
 }
 
-function buildOrderCode(array $order): string
+function getPaymentStatusLabel(string $status): string
 {
-    $orderCode = trim((string) ($order['order_code'] ?? ''));
-
-    if ($orderCode !== '') {
-        return $orderCode;
-    }
-
-    $id = (int) ($order['id'] ?? 0);
-    return 'ORD-' . date('Y') . '-' . str_pad((string) $id, 3, '0', STR_PAD_LEFT);
+    return $status === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán';
 }
 
-$stats = [
-    'total' => 0,
-    'pending' => 0,
-    'confirmed' => 0,
-    'completed' => 0,
-];
-
-$statsSql = "
-    SELECT
-        COUNT(*) AS total_orders,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_orders,
-        SUM(CASE WHEN status IN ('confirmed', 'in_progress') THEN 1 ELSE 0 END) AS confirmed_orders,
-        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_orders
-    FROM orders
-    WHERE buyer_id = ?
-";
-
-$statsStmt = $conn->prepare($statsSql);
-if ($statsStmt) {
-    $statsStmt->bind_param('i', $buyerId);
-    $statsStmt->execute();
-    $statsResult = $statsStmt->get_result();
-    $statsRow = $statsResult ? $statsResult->fetch_assoc() : null;
-    $statsStmt->close();
-
-    if ($statsRow) {
-        $stats['total'] = (int) ($statsRow['total_orders'] ?? 0);
-        $stats['pending'] = (int) ($statsRow['pending_orders'] ?? 0);
-        $stats['confirmed'] = (int) ($statsRow['confirmed_orders'] ?? 0);
-        $stats['completed'] = (int) ($statsRow['completed_orders'] ?? 0);
+function bindDynamicParams(mysqli_stmt $stmt, string $types, array $values): void
+{
+    if ($types === '' || empty($values)) {
+        return;
     }
+
+    $params = [$types];
+
+    foreach ($values as $key => $value) {
+        $params[] = &$values[$key];
+    }
+
+    call_user_func_array([$stmt, 'bind_param'], $params);
 }
 
 $sql = "
     SELECT
         o.id,
         o.order_code,
-        o.bike_id,
         o.offered_price,
-        o.contact_method,
-        o.meeting_location,
-        o.buyer_note,
         o.status,
         o.payment_method,
         o.payment_status,
+        o.contact_method,
+        o.meeting_location,
+        o.buyer_note,
         o.created_at,
+        b.id AS bike_id,
         COALESCE(b.title, 'Xe đạp thể thao') AS bike_title,
-        COALESCE(b.location, 'Đang cập nhật') AS bike_location,
         COALESCE(c.name, 'Danh mục khác') AS category_name,
         COALESCE(br.name, '') AS brand_name,
-        COALESCE(s.full_name, 'Người bán') AS seller_name,
+        COALESCE(seller.full_name, 'Người bán') AS seller_name,
         COALESCE(img.image_url, ?) AS image_url
     FROM orders o
-    LEFT JOIN bikes b ON b.id = o.bike_id
+    INNER JOIN bikes b ON b.id = o.bike_id
+    LEFT JOIN users seller ON seller.id = o.seller_id
     LEFT JOIN categories c ON c.id = b.category_id
     LEFT JOIN brands br ON br.id = b.brand_id
-    LEFT JOIN users s ON s.id = b.seller_id
     LEFT JOIN bike_images img ON img.id = (
         SELECT bi.id
         FROM bike_images bi
         WHERE bi.bike_id = b.id
-        ORDER BY bi.id ASC
+        ORDER BY bi.is_primary DESC, bi.sort_order ASC, bi.id ASC
         LIMIT 1
     )
     WHERE o.buyer_id = ?
@@ -145,7 +124,7 @@ $params = [$fallbackImage, $buyerId];
 $types = 'si';
 
 if ($keyword !== '') {
-    $sql .= " AND (b.title LIKE ? OR o.order_code LIKE ? OR CAST(o.id AS CHAR) LIKE ?)";
+    $sql .= " AND (o.order_code LIKE ? OR b.title LIKE ? OR seller.full_name LIKE ?)";
     $likeKeyword = '%' . $keyword . '%';
     $params[] = $likeKeyword;
     $params[] = $likeKeyword;
@@ -175,17 +154,10 @@ switch ($sort) {
         break;
 }
 
-$orders = [];
 $stmt = $conn->prepare($sql);
 
 if ($stmt) {
-    $bindValues = [];
-    $bindValues[] = &$types;
-    foreach ($params as $key => $value) {
-        $bindValues[] = &$params[$key];
-    }
-
-    call_user_func_array([$stmt, 'bind_param'], $bindValues);
+    bindDynamicParams($stmt, $types, $params);
     $stmt->execute();
     $result = $stmt->get_result();
 
@@ -207,7 +179,7 @@ if ($stmt) {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="../css/bike-marketplace.css">
 </head>
@@ -218,7 +190,7 @@ if ($stmt) {
                 <span class="brand-mark"><i class="bi bi-bicycle"></i></span>
                 Bike Marketplace
             </a>
-            <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+            <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Chuyển đổi điều hướng">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="mainNav">
@@ -228,10 +200,17 @@ if ($stmt) {
                     <li class="nav-item"><a class="nav-link" href="../categories.php">Danh mục</a></li>
                     <li class="nav-item"><a class="nav-link" href="../contact.php">Liên hệ</a></li>
                 </ul>
-                <div class="d-flex flex-column flex-lg-row gap-2">
-                    <a href="favorites.php" class="btn btn-outline-dark">Yêu thích</a>
-                    <a href="../profile.php" class="btn btn-outline-dark"><?= e($buyerName) ?></a>
-                    <a href="../logout.php" class="btn btn-success">Đăng xuất</a>
+                <div class="dropdown">
+                    <button class="btn btn-outline-dark dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <?= e($buyerName) ?>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow border-0">
+                        <li><a class="dropdown-item" href="profile.php"><i class="bi bi-person me-2"></i>Hồ sơ</a></li>
+                        <li><a class="dropdown-item active" href="my-orders.php"><i class="bi bi-receipt me-2"></i>Đơn mua của tôi</a></li>
+                        <li><a class="dropdown-item" href="favorites.php"><i class="bi bi-heart me-2"></i>Xe yêu thích</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="../logout.php"><i class="bi bi-box-arrow-right me-2"></i>Đăng xuất</a></li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -242,43 +221,16 @@ if ($stmt) {
             <div class="page-hero-box">
                 <div class="breadcrumb-note"><i class="bi bi-house-door"></i> Trang chủ <span>/</span> Người mua <span>/</span> Đơn mua của tôi</div>
                 <h1 class="section-title text-white mb-2">Đơn mua của tôi</h1>
-                <p class="mb-0 text-white-50">Theo dõi tình trạng các đơn mua xe đạp của bạn.</p>
+                <p class="mb-0 text-white-50">Theo dõi trạng thái giao dịch và xem lại toàn bộ những đơn mua bạn đã tạo.</p>
             </div>
         </section>
 
         <section class="container">
-            <div class="row g-4 mb-4">
-                <div class="col-md-6 col-xl-3">
-                    <div class="stats-card">
-                        <span class="stats-icon"><i class="bi bi-receipt"></i></span>
-                        <div><small>Tổng đơn</small><strong><?= e(number_format($stats['total'], 0, ',', '.')) ?></strong></div>
-                    </div>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                    <div class="stats-card">
-                        <span class="stats-icon"><i class="bi bi-hourglass-split"></i></span>
-                        <div><small>Chờ xác nhận</small><strong><?= e(number_format($stats['pending'], 0, ',', '.')) ?></strong></div>
-                    </div>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                    <div class="stats-card">
-                        <span class="stats-icon"><i class="bi bi-patch-check"></i></span>
-                        <div><small>Đã xác nhận</small><strong><?= e(number_format($stats['confirmed'], 0, ',', '.')) ?></strong></div>
-                    </div>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                    <div class="stats-card">
-                        <span class="stats-icon"><i class="bi bi-bag-check"></i></span>
-                        <div><small>Đã hoàn tất</small><strong><?= e(number_format($stats['completed'], 0, ',', '.')) ?></strong></div>
-                    </div>
-                </div>
-            </div>
-
             <div class="manage-card">
                 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
                     <div>
                         <h2 class="section-title fs-2 mb-2">Danh sách đơn mua</h2>
-                        <p class="section-subtitle mb-0">Theo dõi tiến trình xử lý đơn, trạng thái giao dịch và thông tin xe đạp bạn đã đặt mua.</p>
+                        <p class="section-subtitle mb-0">Tìm theo mã đơn, tên xe hoặc trạng thái để kiểm tra giao dịch nhanh hơn.</p>
                     </div>
                 </div>
 
@@ -287,7 +239,7 @@ if ($stmt) {
                         type="text"
                         class="form-control"
                         name="keyword"
-                        placeholder="Tìm theo mã đơn hoặc tên xe..."
+                        placeholder="Tìm theo mã đơn, tên xe, người bán"
                         value="<?= e($keyword) ?>"
                     >
                     <select class="form-select" name="status">
@@ -305,6 +257,9 @@ if ($stmt) {
                         <option value="price_asc" <?= $sort === 'price_asc' ? 'selected' : '' ?>>Giá thấp đến cao</option>
                     </select>
                     <button type="submit" class="btn btn-outline-dark">Lọc</button>
+                    <?php if ($keyword !== '' || $statusFilter !== '' || $sort !== 'newest'): ?>
+                        <a href="my-orders.php" class="btn btn-outline-dark">Xóa lọc</a>
+                    <?php endif; ?>
                 </form>
 
                 <div class="listing-list">
@@ -312,26 +267,29 @@ if ($stmt) {
                         <?php foreach ($orders as $order): ?>
                             <?php
                             $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
-                            $orderCode = buildOrderCode($order);
                             $brandName = trim((string) ($order['brand_name'] ?? ''));
-                            $categoryLabel = $brandName !== '' ? ($order['category_name'] . ' • ' . $brandName) : $order['category_name'];
+                            $subLine = (string) ($order['category_name'] ?? 'Danh mục khác');
+                            if ($brandName !== '') {
+                                $subLine .= ' • ' . $brandName;
+                            }
                             ?>
                             <article class="listing-item">
                                 <div class="listing-grid">
-                                    <img class="listing-thumb" src="<?= e($order['image_url'] ?? $fallbackImage) ?>" alt="<?= e($order['bike_title'] ?? 'Xe đạp thể thao') ?>">
+                                    <img class="listing-thumb" src="<?= e((string) ($order['image_url'] ?? $fallbackImage)) ?>" alt="<?= e((string) ($order['bike_title'] ?? 'Xe đạp thể thao')) ?>">
                                     <div>
-                                        <div class="listing-title"><?= e($orderCode) ?></div>
-                                        <div class="listing-sub mb-2"><?= e($order['bike_title'] ?? 'Xe đạp thể thao') ?></div>
+                                        <div class="listing-title"><?= e((string) ($order['order_code'] ?? 'ORD')) ?></div>
+                                        <div class="listing-sub mb-2"><?= e((string) ($order['bike_title'] ?? 'Xe đạp thể thao')) ?></div>
                                         <div class="listing-meta">
-                                            <span><i class="bi bi-person me-1"></i> Người bán: <?= e($order['seller_name'] ?? 'Người bán') ?></span>
-                                            <span><i class="bi bi-cash me-1"></i> <?= e(formatPriceVnd($order['offered_price'] ?? 0)) ?></span>
+                                            <span><i class="bi bi-person me-1"></i> Người bán: <?= e((string) ($order['seller_name'] ?? 'Người bán')) ?></span>
+                                            <span><i class="bi bi-tags me-1"></i> <?= e($subLine) ?></span>
                                             <span><i class="bi bi-calendar-event me-1"></i> <?= e(formatDateVi($order['created_at'] ?? null)) ?></span>
                                         </div>
                                     </div>
                                     <div class="listing-side">
                                         <span class="status-badge <?= e($statusMeta['class']) ?>"><?= e($statusMeta['label']) ?></span>
                                         <div class="listing-meta">
-                                            <span><i class="bi bi-bicycle me-1"></i> <?= e($categoryLabel) ?></span>
+                                            <span><i class="bi bi-cash-stack me-1"></i> <?= e(formatPriceVnd($order['offered_price'] ?? 0)) ?></span>
+                                            <span><i class="bi bi-credit-card me-1"></i> <?= e(getPaymentStatusLabel((string) ($order['payment_status'] ?? 'unpaid'))) ?></span>
                                         </div>
                                     </div>
                                     <div class="listing-actions">
@@ -341,10 +299,10 @@ if ($stmt) {
                             </article>
                         <?php endforeach; ?>
                     <?php else: ?>
-                        <div class="helper-card mt-4 text-center">
-                            <div class="stats-icon mx-auto mb-3"><i class="bi bi-receipt-cutoff"></i></div>
+                        <div class="helper-card text-center">
+                            <div class="stats-icon mx-auto mb-3"><i class="bi bi-receipt"></i></div>
                             <h3 class="section-heading">Bạn chưa có đơn mua nào</h3>
-                            <p class="text-muted mb-3">Hãy khám phá các mẫu xe đạp đang được đăng bán và tạo đơn mua đầu tiên của bạn.</p>
+                            <p class="mb-3">Khám phá thêm những mẫu xe phù hợp và tạo đơn mua đầu tiên của bạn.</p>
                             <a href="../bikes.php" class="btn btn-success">Khám phá xe đạp</a>
                         </div>
                     <?php endif; ?>
@@ -353,124 +311,29 @@ if ($stmt) {
         </section>
     </main>
 
-    <section class="contact-section" id="contact">
-        <div class="container">
-            <div class="contact-panel">
-                <div class="row g-4 align-items-stretch">
-                    <div class="col-lg-5">
-                        <div class="contact-info h-100">
-                            <div class="section-label text-warning">Liên hệ</div>
-                            <h2 class="section-title text-white mb-3">Cần hỗ trợ đơn mua?</h2>
-                            <p class="contact-copy">Người mua có thể gửi yêu cầu hỗ trợ về đơn hàng, lịch hẹn xem xe, thanh toán hoặc trao đổi với người bán.</p>
-                            <div class="contact-list">
-                                <div class="contact-item">
-                                    <span><i class="bi bi-geo-alt"></i></span>
-                                    <div>
-                                        <strong>Địa chỉ</strong>
-                                        <p>128 Market Street, Ho Chi Minh City</p>
-                                    </div>
-                                </div>
-                                <div class="contact-item">
-                                    <span><i class="bi bi-telephone"></i></span>
-                                    <div>
-                                        <strong>Hotline</strong>
-                                        <p>+84 901 234 567</p>
-                                    </div>
-                                </div>
-                                <div class="contact-item">
-                                    <span><i class="bi bi-envelope"></i></span>
-                                    <div>
-                                        <strong>Email</strong>
-                                        <p>buyer-support@bikemarketplace.com</p>
-                                    </div>
-                                </div>
-                                <div class="contact-item">
-                                    <span><i class="bi bi-clock"></i></span>
-                                    <div>
-                                        <strong>Giờ hỗ trợ</strong>
-                                        <p>8:00 AM - 8:00 PM mỗi ngày</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-7">
-                        <form class="contact-form h-100" action="my-orders.php#contact" method="post">
-                            <input type="hidden" name="contact_form" value="1">
-                            <?php if ($contactSent): ?>
-                                <div class="alert alert-success" role="alert">
-                                    Cảm ơn bạn đã liên hệ. Bike Marketplace sẽ phản hồi trong thời gian sớm nhất.
-                                </div>
-                            <?php endif; ?>
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <label class="form-label fw-semibold" for="contact_name">Họ và tên</label>
-                                    <input type="text" class="form-control" id="contact_name" name="contact_name" value="<?= e($buyerName) ?>" placeholder="Nhập họ và tên">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label fw-semibold" for="contact_phone">Số điện thoại</label>
-                                    <input type="tel" class="form-control" id="contact_phone" name="contact_phone" placeholder="Nhập số điện thoại">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label fw-semibold" for="contact_email">Email</label>
-                                    <input type="email" class="form-control" id="contact_email" name="contact_email" value="<?= e($buyerEmail) ?>" placeholder="email@example.com">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label fw-semibold" for="contact_topic">Chủ đề</label>
-                                    <select class="form-select" id="contact_topic" name="contact_topic">
-                                        <option>Hỗ trợ đơn mua</option>
-                                        <option>Tư vấn mua xe</option>
-                                        <option>Hỗ trợ giao dịch</option>
-                                        <option>Góp ý hệ thống</option>
-                                    </select>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label fw-semibold" for="contact_message">Nội dung</label>
-                                    <textarea class="form-control" id="contact_message" name="contact_message" rows="5" placeholder="Bạn cần hỗ trợ điều gì?"></textarea>
-                                </div>
-                                <div class="col-12 d-grid d-sm-flex justify-content-sm-end">
-                                    <button type="submit" class="btn btn-success px-4">
-                                        <i class="bi bi-send me-2"></i>Gửi liên hệ
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <footer>
+    <footer id="contact">
         <div class="container">
             <div class="row g-4">
                 <div class="col-lg-4">
                     <h4 class="fw-bold mb-3">Bike Marketplace</h4>
-                    <p>Nền tảng mua bán xe đạp hiện đại giúp người mua theo dõi đơn hàng, xem lại lịch sử giao dịch và kết nối thuận tiện với người bán.</p>
+                    <p>Theo dõi trạng thái đơn mua, thông tin xe và người bán trong một giao diện rõ ràng, dễ sử dụng.</p>
                 </div>
                 <div class="col-lg-4">
-                    <h5 class="fw-bold mb-3">Thông tin liên hệ</h5>
-                    <p class="mb-2"><i class="bi bi-geo-alt me-2"></i> 128 Market Street, Ho Chi Minh City</p>
-                    <p class="mb-2"><i class="bi bi-telephone me-2"></i> +84 901 234 567</p>
-                    <p class="mb-0"><i class="bi bi-envelope me-2"></i> hello@bikemarketplace.com</p>
+                    <h5 class="fw-bold mb-3">Liên kết nhanh</h5>
+                    <p class="mb-2"><a href="../bikes.php">Khám phá xe đạp</a></p>
+                    <p class="mb-2"><a href="../categories.php">Danh mục xe</a></p>
+                    <p class="mb-0"><a href="../contact.php">Liên hệ hỗ trợ</a></p>
                 </div>
                 <div class="col-lg-4">
-                    <h5 class="fw-bold mb-3">Theo dõi chúng tôi</h5>
-                    <div class="d-flex gap-2 mb-3">
-                        <a class="social-link" href="#" aria-label="Facebook"><i class="bi bi-facebook"></i></a>
-                        <a class="social-link" href="#" aria-label="Instagram"><i class="bi bi-instagram"></i></a>
-                        <a class="social-link" href="#" aria-label="Twitter"><i class="bi bi-twitter-x"></i></a>
-                        <a class="social-link" href="#" aria-label="YouTube"><i class="bi bi-youtube"></i></a>
-                    </div>
-                    <p class="mb-0">Hỗ trợ mỗi ngày từ 8:00 AM đến 8:00 PM dành cho cộng đồng mua bán xe đạp.</p>
+                    <h5 class="fw-bold mb-3">Tài khoản của bạn</h5>
+                    <p class="mb-2"><a href="profile.php">Hồ sơ</a></p>
+                    <p class="mb-2"><a href="favorites.php">Xe yêu thích</a></p>
+                    <p class="mb-0"><a href="../logout.php">Đăng xuất</a></p>
                 </div>
-            </div>
-            <div class="border-top border-secondary-subtle mt-4 pt-4 text-center text-white-50">
-                <small>&copy; 2026 Bike Marketplace. Trang đơn mua được xây dựng với PHP, CSS, Bootstrap 5 và Bootstrap Icons.</small>
             </div>
         </div>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
 </html>

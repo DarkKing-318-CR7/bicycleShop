@@ -193,12 +193,12 @@ $sql = "
         b.frame_size,
         b.wheel_size,
         b.color,
-        COALESCE(c.name, 'Danh m?c kh?c') AS category_name,
+        COALESCE(c.name, 'Danh mục khác') AS category_name,
         COALESCE(br.name, '') AS brand_name,
         COALESCE(img.image_url, ?) AS image_url,
-        COALESCE(u.full_name, 'Ng??i mua') AS buyer_name,
-        COALESCE(u.phone, '?ang c?p nh?t') AS buyer_phone,
-        COALESCE(u.email, '?ang c?p nh?t') AS buyer_email
+        COALESCE(u.full_name, 'Người mua') AS buyer_name,
+        COALESCE(u.phone, 'Đang cập nhật') AS buyer_phone,
+        COALESCE(u.email, 'Đang cập nhật') AS buyer_email
     FROM orders o
     INNER JOIN bikes b ON b.id = o.bike_id
     LEFT JOIN users u ON u.id = o.buyer_id
@@ -261,9 +261,6 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                     <li class="nav-item"><a class="nav-link" href="#contact">Liên hệ</a></li>
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
-                    <a href="my-bikes.php" class="btn btn-outline-dark">Tin đăng</a>
-                    <a href="orders.php" class="btn btn-outline-dark">Đơn mua</a>
-                    <a href="add-bike.php" class="btn btn-success">Đăng tin mới</a>
                     <a href="../profile.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
                     <a href="../logout.php" class="btn btn-success">Đăng xuất</a>
                 </div>
@@ -292,7 +289,27 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
             </div>
         </section>
 
-        <section class="container">
+        <div class="seller-dashboard-shell container">
+            <aside class="seller-dashboard-sidebar">
+                <div class="seller-sidebar-card">
+                    <div class="seller-sidebar-profile">
+                        <span class="seller-sidebar-avatar"><i class="bi bi-person-circle"></i></span>
+                        <div>
+                            <strong><?= e($sellerName) ?></strong>
+                            <small>Khu vực người bán</small>
+                        </div>
+                    </div>
+                    <nav class="seller-sidebar-nav" aria-label="Seller navigation">
+                        <a href="my-bikes.php" class="seller-sidebar-link"><i class="bi bi-grid"></i><span>Tin đăng của tôi</span></a>
+                        <a href="add-bike.php" class="seller-sidebar-link"><i class="bi bi-plus-circle"></i><span>Đăng tin mới</span></a>
+                        <a href="orders.php" class="seller-sidebar-link is-active"><i class="bi bi-receipt"></i><span>Đơn mua</span></a>
+                        <a href="../profile.php" class="seller-sidebar-link"><i class="bi bi-person"></i><span>Hồ sơ</span></a>
+                        <a href="../logout.php" class="seller-sidebar-link seller-sidebar-link-danger"><i class="bi bi-box-arrow-right"></i><span>Đăng xuất</span></a>
+                    </nav>
+                </div>
+            </aside>
+            <div class="seller-dashboard-main">
+        <section>
             <?php if ($successMessage !== ''): ?>
                 <div class="alert alert-success" role="alert">
                     <?= e($successMessage) ?>
@@ -420,6 +437,8 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                     </section>
                 </div>
             </div>
+            </div>
+        </div>
         </section>
     </main>
 

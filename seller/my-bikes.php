@@ -82,7 +82,7 @@ function getBikeStatusMeta(string $status): array
 
         case 'pending':
         default:
-            return ['class' => 'status-pending', 'label' => 'Chờ duyệt'];
+            return ['class' => 'status-pending', 'label' => 'Chá» duyá»‡t'];
     }
 }
 
@@ -298,6 +298,8 @@ if ($categoryId > 0) {
     $params[] = $categoryId;
 }
 
+$viewCountSelect = tableColumnExists($conn, 'bikes', 'view_count') ? 'b.view_count' : '0';
+
 $orderBy = "b.created_at DESC, b.id DESC";
 
 if ($sort === 'oldest') {
@@ -395,9 +397,6 @@ $hasActiveFilters = $keyword !== '' || $statusFilter !== 'all' || $categoryId > 
                     <li class="nav-item"><a class="nav-link" href="#contact">Liên hệ</a></li>
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
-                    <a href="my-bikes.php" class="btn btn-outline-dark">Tin đăng</a>
-                    <a href="orders.php" class="btn btn-outline-dark">Đơn mua</a>
-                    <a href="add-bike.php" class="btn btn-success">Đăng tin mới</a>
                     <a href="../profile.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
                     <a href="../logout.php" class="btn btn-success">Đăng xuất</a>
                 </div>
@@ -414,7 +413,27 @@ $hasActiveFilters = $keyword !== '' || $statusFilter !== 'all' || $categoryId > 
             </div>
         </section>
 
-        <section class="container">
+        <div class="seller-dashboard-shell container">
+            <aside class="seller-dashboard-sidebar">
+                <div class="seller-sidebar-card">
+                    <div class="seller-sidebar-profile">
+                        <span class="seller-sidebar-avatar"><i class="bi bi-person-circle"></i></span>
+                        <div>
+                            <strong><?= e($sellerName) ?></strong>
+                            <small>Khu vực người bán</small>
+                        </div>
+                    </div>
+                    <nav class="seller-sidebar-nav" aria-label="Seller navigation">
+                        <a href="my-bikes.php" class="seller-sidebar-link is-active"><i class="bi bi-grid"></i><span>Tin đăng của tôi</span></a>
+                        <a href="add-bike.php" class="seller-sidebar-link"><i class="bi bi-plus-circle"></i><span>Đăng tin mới</span></a>
+                        <a href="orders.php" class="seller-sidebar-link"><i class="bi bi-receipt"></i><span>Đơn mua</span></a>
+                        <a href="../profile.php" class="seller-sidebar-link"><i class="bi bi-person"></i><span>Hồ sơ</span></a>
+                        <a href="../logout.php" class="seller-sidebar-link seller-sidebar-link-danger"><i class="bi bi-box-arrow-right"></i><span>Đăng xuất</span></a>
+                    </nav>
+                </div>
+            </aside>
+            <div class="seller-dashboard-main">
+        <section>
             <?php if ($successMessage !== ''): ?>
                 <div class="alert alert-success" role="alert">
                     <?= e($successMessage) ?>
@@ -474,7 +493,7 @@ $hasActiveFilters = $keyword !== '' || $statusFilter !== 'all' || $categoryId > 
                             >
                             <select class="form-select" name="status">
                                 <option value="all" <?= $statusFilter === 'all' ? 'selected' : '' ?>>Tất cả</option>
-                                <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Chờ duyệt</option>
+                                <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Chá» duyá»‡t</option>
                                 <option value="approved" <?= $statusFilter === 'approved' ? 'selected' : '' ?>>Đã duyệt</option>
                                 <option value="rejected" <?= $statusFilter === 'rejected' ? 'selected' : '' ?>>Từ chối</option>
                                 <option value="sold" <?= $statusFilter === 'sold' ? 'selected' : '' ?>>Đã bán</option>
@@ -493,7 +512,7 @@ $hasActiveFilters = $keyword !== '' || $statusFilter !== 'all' || $categoryId > 
                                 <option value="price_asc" <?= $sort === 'price_asc' ? 'selected' : '' ?>>Giá tăng dần</option>
                                 <option value="price_desc" <?= $sort === 'price_desc' ? 'selected' : '' ?>>Giá giảm dần</option>
                             </select>
-                            <button class="btn btn-outline-dark" type="submit">Lọc</button>
+                            <button class="btn btn-outline-dark" type="submit">Lá»c</button>
                             <?php if ($hasActiveFilters): ?>
                                 <a href="my-bikes.php" class="btn btn-outline-dark">Xóa lọc</a>
                             <?php endif; ?>
@@ -575,7 +594,7 @@ $hasActiveFilters = $keyword !== '' || $statusFilter !== 'all' || $categoryId > 
                 <div class="col-lg-4">
                     <div class="helper-card">
                         <h3 class="section-heading">Trạng thái tin đăng</h3>
-                        <p class="mb-2"><strong>Chờ duyệt:</strong> Tin đang được hệ thống kiểm tra trước khi hiển thị công khai.</p>
+                        <p class="mb-2"><strong>Chờ duyệt:</strong> Tin đăng được hệ thống kiểm tra trước khi hiển thị công khai.</p>
                         <p class="mb-2"><strong>Đã duyệt:</strong> Tin đã xuất hiện công khai trên marketplace và người mua có thể xem.</p>
                         <p class="mb-2"><strong>Từ chối:</strong> Tin cần chỉnh sửa thêm nội dung hoặc hình ảnh trước khi đăng lại.</p>
                         <p class="mb-0"><strong>Đã bán:</strong> Xe đã hoàn tất giao dịch và không còn hiển thị như một tin đang mở bán.</p>
@@ -593,6 +612,8 @@ $hasActiveFilters = $keyword !== '' || $statusFilter !== 'all' || $categoryId > 
                 </div>
             </div>
         </section>
+            </div>
+        </div>
         <section class="container">
             <div class="cta-band">
                 <div class="row align-items-center g-4">
@@ -643,7 +664,7 @@ $hasActiveFilters = $keyword !== '' || $statusFilter !== 'all' || $categoryId > 
                                 <div class="contact-item">
                                     <span><i class="bi bi-clock"></i></span>
                                     <div>
-                                        <strong>Giờ hỗ trợ</strong>
+                                        <strong>Giá» há»— trá»£</strong>
                                         <p>8:00 AM - 8:00 PM mỗi ngày</p>
                                     </div>
                                 </div>

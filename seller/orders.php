@@ -350,9 +350,6 @@ if ($stmt) {
                     <li class="nav-item"><a class="nav-link" href="#contact">Liên hệ</a></li>
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
-                    <a href="my-bikes.php" class="btn btn-outline-dark">Tin đăng</a>
-                    <a href="orders.php" class="btn btn-outline-dark">Đơn mua</a>
-                    <a href="add-bike.php" class="btn btn-success">Đăng tin mới</a>
                     <a href="../profile.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
                     <a href="../logout.php" class="btn btn-success">Đăng xuất</a>
                 </div>
@@ -369,7 +366,27 @@ if ($stmt) {
             </div>
         </section>
 
-        <section class="container">
+        <div class="seller-dashboard-shell container">
+            <aside class="seller-dashboard-sidebar">
+                <div class="seller-sidebar-card">
+                    <div class="seller-sidebar-profile">
+                        <span class="seller-sidebar-avatar"><i class="bi bi-person-circle"></i></span>
+                        <div>
+                            <strong><?= e($sellerName) ?></strong>
+                            <small>Khu vực người bán</small>
+                        </div>
+                    </div>
+                    <nav class="seller-sidebar-nav" aria-label="Seller navigation">
+                        <a href="my-bikes.php" class="seller-sidebar-link"><i class="bi bi-grid"></i><span>Tin đăng của tôi</span></a>
+                        <a href="add-bike.php" class="seller-sidebar-link"><i class="bi bi-plus-circle"></i><span>Đăng tin mới</span></a>
+                        <a href="orders.php" class="seller-sidebar-link is-active"><i class="bi bi-receipt"></i><span>Đơn mua</span></a>
+                        <a href="../profile.php" class="seller-sidebar-link"><i class="bi bi-person"></i><span>Hồ sơ</span></a>
+                        <a href="../logout.php" class="seller-sidebar-link seller-sidebar-link-danger"><i class="bi bi-box-arrow-right"></i><span>Đăng xuất</span></a>
+                    </nav>
+                </div>
+            </aside>
+            <div class="seller-dashboard-main">
+        <section>
             <?php if ($successMessage !== ''): ?>
                 <div class="alert alert-success" role="alert">
                     <?= e($successMessage) ?>
@@ -510,6 +527,8 @@ if ($stmt) {
                     <?php endif; ?>
                 </div>
             </div>
+            </div>
+        </div>
         </section>
     </main>
 
