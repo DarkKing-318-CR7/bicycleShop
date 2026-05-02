@@ -314,7 +314,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($insertStmt) {
             $categoryId = (int) $formData['category_id'];
             $brandId = (int) $formData['brand_id'];
-            $newBikeStatus = $requireApproval ? 'pending' : 'approved';
+            $newBikeStatus = 'pending';
             $insertStmt->bind_param(
                 'iiisssdssssss',
                 $sellerId,
@@ -394,9 +394,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $errors[] = 'Không thể upload ảnh xe. Vui lòng kiểm tra định dạng ảnh và thử lại.';
                 } else {
-                    $success = $newBikeStatus === 'pending'
-                        ? 'Đăng tin thành công. Tin đăng của bạn đang chờ kiểm duyệt.'
-                        : 'Đăng tin thành công. Tin đăng đã được hiển thị trên marketplace.';
+                    $success = 'Đăng tin thành công. Tin đăng của bạn đang chờ kiểm duyệt.';
                 }
 
                 if ($success !== '') {

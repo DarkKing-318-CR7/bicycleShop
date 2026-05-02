@@ -18,31 +18,6 @@ $adminName = $currentUser['full_name'] ?? 'Quản trị viên';
 $message = '';
 $messageType = 'success';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['moderate_bike'])) {
-    $bikeId = (int)($_POST['bike_id'] ?? 0);
-    $action = $_POST['action_type'] ?? '';
-
-    if ($bikeId > 0 && in_array($action, ['approve', 'reject'], true)) {
-        $newStatus = $action === 'approve' ? 'approved' : 'rejected';
-
-        $stmt = $conn->prepare("UPDATE bikes SET status = ?, updated_at = NOW() WHERE id = ?");
-        $stmt->bind_param("si", $newStatus, $bikeId);
-
-        if ($stmt->execute()) {
-            header('Location: bikes.php?msg=' . ($action === 'approve' ? 'approved' : 'rejected'));
-            exit;
-        } else {
-            $message = 'Có lỗi xảy ra khi cập nhật trạng thái tin đăng.';
-            $messageType = 'danger';
-        }
-
-        $stmt->close();
-    } else {
-        $message = 'Dữ liệu không hợp lệ.';
-        $messageType = 'danger';
-    }
-}
-
 if (isset($_GET['msg'])) {
     if ($_GET['msg'] === 'approved') {
         $message = 'Đã duyệt tin đăng thành công.';
@@ -92,6 +67,29 @@ function fetchCount(mysqli $conn, string $sql, int $fallback = 0): int
     return isset($row['total']) ? (int) $row['total'] : $fallback;
 }
 
+function paginationUrl(int $page): string
+{
+    $query = $_GET;
+    $query['page'] = $page;
+
+    return '?' . http_build_query($query);
+}
+
+function adminBikeImageSrc(?string $path): string
+{
+    $path = trim((string) $path);
+
+    if ($path === '') {
+        return '';
+    }
+
+    if (preg_match('/^(https?:)?\/\//i', $path) || preg_match('/^data:image\//i', $path) || substr($path, 0, 1) === '/') {
+        return $path;
+    }
+
+    return '../' . ltrim($path, '/');
+}
+
 $adminInitials = getInitials($adminName);
 
 $totalBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes");
@@ -103,6 +101,8 @@ $keyword = trim($_GET['keyword'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
 $categoryFilter = (int)($_GET['category_id'] ?? 0);
 $sortFilter = trim($_GET['sort'] ?? 'latest');
+$itemsPerPage = 10;
+$currentPage = max(1, (int)($_GET['page'] ?? 1));
 
 $categoryList = [];
 $categoryResult = $conn->query("SELECT id, name FROM categories ORDER BY name ASC");
@@ -147,9 +147,10 @@ $sql = "
 
 $params = [];
 $types = '';
+$whereSql = '';
 
 if ($keyword !== '') {
-    $sql .= " AND (b.title LIKE ? OR u.full_name LIKE ?)";
+    $whereSql .= " AND (b.title LIKE ? OR u.full_name LIKE ?)";
     $keywordLike = '%' . $keyword . '%';
     $params[] = $keywordLike;
     $params[] = $keywordLike;
@@ -157,16 +158,45 @@ if ($keyword !== '') {
 }
 
 if ($statusFilter !== '') {
-    $sql .= " AND b.status = ?";
+    $whereSql .= " AND b.status = ?";
     $params[] = $statusFilter;
     $types .= 's';
 }
 
 if ($categoryFilter > 0) {
-    $sql .= " AND b.category_id = ?";
+    $whereSql .= " AND b.category_id = ?";
     $params[] = $categoryFilter;
     $types .= 'i';
 }
+
+$countSql = "
+    SELECT COUNT(*) AS total
+    FROM bikes b
+    LEFT JOIN categories c ON b.category_id = c.id
+    LEFT JOIN users u ON b.seller_id = u.id
+    WHERE 1 = 1
+    {$whereSql}
+";
+
+$filteredTotal = 0;
+$countStmt = $conn->prepare($countSql);
+if ($countStmt) {
+    if (!empty($params)) {
+        $countStmt->bind_param($types, ...$params);
+    }
+
+    $countStmt->execute();
+    $countResult = $countStmt->get_result();
+    $countRow = $countResult ? $countResult->fetch_assoc() : null;
+    $filteredTotal = isset($countRow['total']) ? (int)$countRow['total'] : 0;
+    $countStmt->close();
+}
+
+$totalPages = max(1, (int)ceil($filteredTotal / $itemsPerPage));
+$currentPage = min($currentPage, $totalPages);
+$offset = ($currentPage - 1) * $itemsPerPage;
+
+$sql .= $whereSql;
 
 switch ($sortFilter) {
     case 'price_asc':
@@ -183,15 +213,18 @@ switch ($sortFilter) {
         break;
 }
 
-$sql .= " LIMIT 10";
+$sql .= " LIMIT ? OFFSET ?";
 
 $bikeList = [];
 $stmt = $conn->prepare($sql);
 
 if ($stmt) {
-    if (!empty($params)) {
-        $stmt->bind_param($types, ...$params);
-    }
+    $queryParams = $params;
+    $queryTypes = $types . 'ii';
+    $queryParams[] = $itemsPerPage;
+    $queryParams[] = $offset;
+
+    $stmt->bind_param($queryTypes, ...$queryParams);
 
     $stmt->execute();
     $result = $stmt->get_result();
@@ -202,6 +235,9 @@ if ($stmt) {
 
     $stmt->close();
 }
+
+$firstItem = $filteredTotal > 0 ? $offset + 1 : 0;
+$lastItem = min($offset + count($bikeList), $filteredTotal);
 ?>
 
 
@@ -297,7 +333,7 @@ if ($stmt) {
                         <div class="col-sm-6 col-xl-3">
                             <div class="stats-card">
                                 <span class="stats-icon"><i class="bi bi-bag-check"></i></span>
-                                <div><small>Đã bán</small><strong>80</strong></div>
+                                <div><small>Đã bán</small><strong><?= e(number_format($soldBikes, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                     </div>
@@ -325,7 +361,7 @@ if ($stmt) {
                                     <div class="col-xl-2 col-md-6">
                                         <select name="status" class="form-select">
                                             <option value="">Tất cả</option>
-                                            <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Chờ duyệt</option>
+                                            <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Chưa kiểm duyệt</option>
                                             <option value="approved" <?= $statusFilter === 'approved' ? 'selected' : '' ?>>Đã duyệt</option>
                                             <option value="rejected" <?= $statusFilter === 'rejected' ? 'selected' : '' ?>>Từ chối</option>
                                             <option value="sold" <?= $statusFilter === 'sold' ? 'selected' : '' ?>>Đã bán</option>
@@ -372,7 +408,7 @@ if ($stmt) {
                                         <p class="text-muted mb-0">Theo dõi 10 tin đăng gần nhất cần kiểm tra hoặc cập nhật trạng thái.</p>
                                     </div>
                                     <div class="text-muted">
-                                        Hiển thị <?= count($bikeList) > 0 ? '1-' . count($bikeList) : '0' ?> trong <?= e($totalBikes) ?> tin đăng
+                                        Hiển thị <?= e((string)$firstItem) ?>-<?= e((string)$lastItem) ?> trong <?= e(number_format($filteredTotal, 0, ',', '.')) ?> tin đăng
                                     </div>
                                 </div>
                                 <div class="table-wrap">
@@ -396,7 +432,7 @@ if ($stmt) {
                                                 <?php foreach ($bikeList as $bike): ?>
                                                     <?php
                                                     $statusText = match ($bike['status']) {
-                                                        'pending' => 'Chờ duyệt',
+                                                        'pending' => 'Chưa kiểm duyệt',
                                                         'approved' => 'Đã duyệt',
                                                         'rejected' => 'Từ chối',
                                                         'sold' => 'Đã bán',
@@ -412,18 +448,24 @@ if ($stmt) {
                                                         default => 'status-pending'
                                                     };
 
-                                                    $imageUrl = !empty($bike['image_url'])
-                                                        ? $bike['image_url']
-                                                        : 'https://via.placeholder.com/72x52?text=No+Image';
+                                                    $imageUrl = adminBikeImageSrc($bike['image_url'] ?? '');
                                                     ?>
                                                     <tr>
                                                         <td>
-                                                            <img
-                                                                src="<?= e($imageUrl) ?>"
-                                                                alt="<?= e($bike['title']) ?>"
-                                                                width="72"
-                                                                height="52"
-                                                                class="rounded-3 object-fit-cover">
+                                                            <div class="position-relative" style="width:72px;height:72px;">
+                                                                <?php if ($imageUrl !== ''): ?>
+                                                                    <img
+                                                                        src="<?= e($imageUrl) ?>"
+                                                                        alt="<?= e($bike['title']) ?>"
+                                                                        width="72"
+                                                                        height="72"
+                                                                        class="rounded-3 object-fit-cover"
+                                                                        onerror="this.classList.add('d-none'); this.nextElementSibling.classList.remove('d-none');">
+                                                                    <span class="stats-icon d-none"><i class="bi bi-image"></i></span>
+                                                                <?php else: ?>
+                                                                    <span class="stats-icon"><i class="bi bi-image"></i></span>
+                                                                <?php endif; ?>
+                                                            </div>
                                                         </td>
                                                         <td><?= e($bike['title']) ?></td>
                                                         <td><?= e($bike['seller_name'] ?? 'Không rõ') ?></td>
@@ -446,24 +488,13 @@ if ($stmt) {
                                                                     data-bs-target="#bikeModal<?= (int)$bike['id'] ?>">
                                                                     Xem
                                                                 </button>
-
                                                                 <?php if (($bike['status'] ?? '') === 'pending'): ?>
-                                                                    <form method="post" class="d-inline">
-                                                                        <input type="hidden" name="bike_id" value="<?= (int)$bike['id'] ?>">
-                                                                        <input type="hidden" name="action_type" value="approve">
-                                                                        <button type="submit" name="moderate_bike" class="btn btn-sm btn-success">
-                                                                            Duyệt
-                                                                        </button>
-                                                                    </form>
-
-                                                                    <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn từ chối tin đăng này?');">
-                                                                        <input type="hidden" name="bike_id" value="<?= (int)$bike['id'] ?>">
-                                                                        <input type="hidden" name="action_type" value="reject">
-                                                                        <button type="submit" name="moderate_bike" class="btn btn-sm btn-outline-danger">
-                                                                            Từ chối
-                                                                        </button>
-                                                                    </form>
+                                                                    <a href="moderation.php?bike_id=<?= (int)$bike['id'] ?>" class="btn btn-sm btn-success rounded-pill px-3" title="Đi kiểm duyệt">
+                                                                        <i class="bi bi-shield-check me-1"></i>Kiểm duyệt
+                                                                    </a>
                                                                 <?php endif; ?>
+
+
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -520,11 +551,17 @@ if ($stmt) {
 
                     <nav aria-label="Điều hướng trang" class="mt-4">
                         <ul class="pagination justify-content-center mb-0">
-                            <li class="page-item disabled"><a class="page-link" href="#">Trước</a></li>
-                            <li class="page-item active"><a class="page-link" href="#">1</a></li>
-                            <li class="page-item"><a class="page-link" href="#">2</a></li>
-                            <li class="page-item"><a class="page-link" href="#">3</a></li>
-                            <li class="page-item"><a class="page-link" href="#">Sau</a></li>
+                            <li class="page-item <?= $currentPage <= 1 ? 'disabled' : '' ?>">
+                                <a class="page-link" href="<?= $currentPage <= 1 ? '#' : e(paginationUrl($currentPage - 1)) ?>">Trước</a>
+                            </li>
+                            <?php for ($page = 1; $page <= $totalPages; $page++): ?>
+                                <li class="page-item <?= $page === $currentPage ? 'active' : '' ?>">
+                                    <a class="page-link" href="<?= e(paginationUrl($page)) ?>"><?= e((string)$page) ?></a>
+                                </li>
+                            <?php endfor; ?>
+                            <li class="page-item <?= $currentPage >= $totalPages ? 'disabled' : '' ?>">
+                                <a class="page-link" href="<?= $currentPage >= $totalPages ? '#' : e(paginationUrl($currentPage + 1)) ?>">Sau</a>
+                            </li>
                         </ul>
                     </nav>
 
@@ -607,22 +644,11 @@ if ($stmt) {
                             </div>
                         </div>
                         <div class="modal-footer">
+
                             <?php if (($bike['status'] ?? '') === 'pending'): ?>
-                                <a href="moderation.php?bike_id=<?= (int)$bike['id'] ?>" class="btn btn-outline-dark">
-                                    Xem chi tiết
+                                <a href="moderation.php?bike_id=<?= (int)$bike['id'] ?>" class="btn btn-success rounded-pill px-3">
+                                    <i class="bi bi-shield-check me-1"></i>Kiểm duyệt
                                 </a>
-
-                                <form method="post" class="d-inline">
-                                    <input type="hidden" name="bike_id" value="<?= (int)$bike['id'] ?>">
-                                    <input type="hidden" name="action_type" value="approve">
-                                    <button type="submit" name="moderate_bike" class="btn btn-success">Duyệt</button>
-                                </form>
-
-                                <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn từ chối tin đăng này?');">
-                                    <input type="hidden" name="bike_id" value="<?= (int)$bike['id'] ?>">
-                                    <input type="hidden" name="action_type" value="reject">
-                                    <button type="submit" name="moderate_bike" class="btn btn-outline-danger">Từ chối</button>
-                                </form>
                             <?php endif; ?>
 
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>

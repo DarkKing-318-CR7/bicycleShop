@@ -57,26 +57,64 @@ function getInitials(string $name): string
     return strtoupper($initials ?: 'AD');
 }
 
+function createBrandSlug(string $name): string
+{
+    $slug = trim($name);
+    $slug = str_replace(['Đ', 'đ'], ['D', 'd'], $slug);
+
+    if (function_exists('iconv')) {
+        $converted = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $slug);
+        if ($converted !== false) {
+            $slug = $converted;
+        }
+    }
+
+    $slug = strtolower($slug);
+    $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
+    $slug = trim((string) $slug, '-');
+
+    return $slug;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_brand'])) {
     $brandName = trim($_POST['name'] ?? '');
+    $brandSlug = createBrandSlug($brandName);
 
-    if ($brandName === '') {
+    if ($brandName === '' || $brandSlug === '') {
         $message = 'Vui lòng nhập tên thương hiệu.';
         $messageType = 'danger';
     } else {
-        $stmt = $conn->prepare("INSERT INTO brands (name) VALUES (?)");
+        $checkStmt = $conn->prepare("SELECT id FROM brands WHERE slug = ? LIMIT 1");
 
-        if ($stmt) {
-            $stmt->bind_param("s", $brandName);
+        if ($checkStmt) {
+            $checkStmt->bind_param("s", $brandSlug);
+            $checkStmt->execute();
+            $checkResult = $checkStmt->get_result();
+            $brandExists = $checkResult && $checkResult->fetch_assoc();
+            $checkStmt->close();
 
-            if ($stmt->execute()) {
-                header('Location: brands.php?msg=created');
-                exit;
+            if ($brandExists) {
+                $message = 'Thương hiệu đã tồn tại';
+                $messageType = 'danger';
+            } else {
+                $stmt = $conn->prepare("INSERT INTO brands (name, slug) VALUES (?, ?)");
+
+                if ($stmt) {
+                    $stmt->bind_param("ss", $brandName, $brandSlug);
+
+                    if ($stmt->execute()) {
+                        header('Location: brands.php?msg=created');
+                        exit;
+                    }
+
+                    $message = 'Không thể thêm thương hiệu. Tên thương hiệu có thể đã tồn tại.';
+                    $messageType = 'danger';
+                    $stmt->close();
+                }
             }
-
-            $message = 'Không thể thêm thương hiệu. Tên thương hiệu có thể đã tồn tại.';
+        } else {
+            $message = 'Không thể kiểm tra thương hiệu lúc này.';
             $messageType = 'danger';
-            $stmt->close();
         }
     }
 }

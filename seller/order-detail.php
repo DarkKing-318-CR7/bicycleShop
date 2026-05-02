@@ -173,6 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order_status']
 }
 
 $order = null;
+$cancelReasonSelect = tableColumnExists($conn, 'orders', 'cancel_reason') ? 'o.cancel_reason' : "''";
 
 $sql = "
     SELECT
@@ -183,6 +184,7 @@ $sql = "
         o.contact_method,
         o.meeting_location,
         o.buyer_note,
+        {$cancelReasonSelect} AS cancel_reason,
         o.payment_method,
         o.payment_status,
         o.{$amountColumn} AS order_total,
@@ -377,6 +379,9 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                             <div class="meta-item"><small>Địa điểm giao dịch</small><strong><?= e($order['meeting_location'] !== "" ? $order['meeting_location'] : "Đang cập nhật") ?></strong></div>
                             <div class="meta-item"><small>Thanh toán</small><strong><?= e($order['payment_status'] !== "" ? $order['payment_status'] : "Đang cập nhật") ?></strong></div>
                             <div class="meta-item"><small>Ghi chú</small><strong><?= e($order['buyer_note'] !== "" ? $order['buyer_note'] : "Không có ghi chú") ?></strong></div>
+                            <?php if (($order['status'] ?? '') === 'cancelled' && trim((string)($order['cancel_reason'] ?? '')) !== ''): ?>
+                                <div class="meta-item"><small>Lý do hủy</small><strong><?= e($order['cancel_reason']) ?></strong></div>
+                            <?php endif; ?>
                         </div>
                     </section>
                 </div>

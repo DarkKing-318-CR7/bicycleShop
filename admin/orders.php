@@ -23,6 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order_status']
     $orderId = (int)($_POST['order_id'] ?? 0);
     $action = trim($_POST['action_type'] ?? '');
     $newStatus = trim($_POST['new_status'] ?? '');
+    $cancelReason = trim($_POST['cancel_reason'] ?? '');
 
     if ($orderId > 0) {
         if ($action === 'cancel') {
@@ -30,18 +31,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order_status']
         }
 
         if (in_array($newStatus, ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'], true)) {
-            $stmt = $conn->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE id = ?");
-            $stmt->bind_param("si", $newStatus, $orderId);
-
-            if ($stmt->execute()) {
+            if ($newStatus === 'cancelled' && $cancelReason === '') {
+                $message = 'Vui lòng nhập lý do hủy đơn.';
+                $messageType = 'danger';
+            } elseif (updateAdminOrderStatus($conn, $orderId, $newStatus, $cancelReason)) {
                 header('Location: orders.php?msg=updated');
                 exit;
             } else {
-                $message = 'Không thể cập nhật trạng thái đơn hàng.';
+                $message = 'Không thể cập nhật đơn hàng. Đơn có thể đã hoàn tất hoặc đã hủy.';
                 $messageType = 'danger';
             }
-
-            $stmt->close();
         } else {
             $message = 'Trạng thái đơn hàng không hợp lệ.';
             $messageType = 'danger';
@@ -97,6 +96,14 @@ function fetchCount(mysqli $conn, string $sql, int $fallback = 0): int
     return isset($row['total']) ? (int)$row['total'] : $fallback;
 }
 
+function paginationUrl(int $page): string
+{
+    $query = $_GET;
+    $query['page'] = $page;
+
+    return '?' . http_build_query($query);
+}
+
 function getOrderAmountColumn(mysqli $conn): string
 {
     $columns = [];
@@ -125,8 +132,115 @@ function getOrderAmountColumn(mysqli $conn): string
     return 'total_amount';
 }
 
+function ensureOrderCancelReasonColumn(mysqli $conn): bool
+{
+    if (tableColumnExists($conn, 'orders', 'cancel_reason')) {
+        return true;
+    }
+
+    $conn->query("ALTER TABLE orders ADD COLUMN cancel_reason text NULL AFTER buyer_note");
+
+    return tableColumnExists($conn, 'orders', 'cancel_reason');
+}
+
+function updateAdminOrderStatus(mysqli $conn, int $orderId, string $newStatus, string $cancelReason = ''): bool
+{
+    if (!in_array($newStatus, ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'], true)) {
+        return false;
+    }
+
+    if ($newStatus === 'cancelled' && trim($cancelReason) === '') {
+        return false;
+    }
+
+    if ($newStatus === 'cancelled' && !ensureOrderCancelReasonColumn($conn)) {
+        return false;
+    }
+
+    $conn->begin_transaction();
+
+    if ($newStatus === 'cancelled') {
+        $stmt = $conn->prepare("
+            UPDATE orders
+            SET status = ?, cancel_reason = ?, updated_at = NOW()
+            WHERE id = ?
+              AND status NOT IN ('completed', 'cancelled')
+        ");
+    } else {
+        $stmt = $conn->prepare("
+            UPDATE orders
+            SET status = ?, updated_at = NOW()
+            WHERE id = ?
+              AND status NOT IN ('completed', 'cancelled')
+        ");
+    }
+
+    if (!$stmt) {
+        $conn->rollback();
+        return false;
+    }
+
+    if ($newStatus === 'cancelled') {
+        $stmt->bind_param("ssi", $newStatus, $cancelReason, $orderId);
+    } else {
+        $stmt->bind_param("si", $newStatus, $orderId);
+    }
+    $stmt->execute();
+    $updated = $stmt->affected_rows > 0;
+    $stmt->close();
+
+    if (!$updated) {
+        $conn->rollback();
+        return false;
+    }
+
+    if ($newStatus === 'completed') {
+        $bikeStmt = $conn->prepare("
+            UPDATE bikes b
+            INNER JOIN orders o ON o.bike_id = b.id
+            SET b.status = 'sold', b.updated_at = NOW()
+            WHERE o.id = ?
+        ");
+
+        if (!$bikeStmt) {
+            $conn->rollback();
+            return false;
+        }
+
+        $bikeStmt->bind_param("i", $orderId);
+        $bikeStmt->execute();
+        $bikeStmt->close();
+
+        $cancelOtherStmt = $conn->prepare("
+            UPDATE orders
+            SET status = 'cancelled', updated_at = NOW()
+            WHERE bike_id = (
+                SELECT bike_id FROM (
+                    SELECT bike_id FROM orders WHERE id = ?
+                ) AS completed_order
+            )
+              AND id <> ?
+              AND status IN ('pending', 'confirmed', 'in_progress')
+        ");
+
+        if (!$cancelOtherStmt) {
+            $conn->rollback();
+            return false;
+        }
+
+        $cancelOtherStmt->bind_param("ii", $orderId, $orderId);
+        $cancelOtherStmt->execute();
+        $cancelOtherStmt->close();
+    }
+
+    $conn->commit();
+    return true;
+}
+
 $adminInitials = getInitials($adminName);
 $amountColumn = getOrderAmountColumn($conn);
+$hasCancelReasonColumn = ensureOrderCancelReasonColumn($conn);
+$cancelReasonSelect = $hasCancelReasonColumn ? 'o.cancel_reason' : "''";
 
 /**
  * THỐNG KÊ ĐƠN HÀNG
@@ -144,6 +258,8 @@ $cancelledOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders WHERE
 $keyword = trim($_GET['keyword'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
 $sortFilter = trim($_GET['sort'] ?? 'latest');
+$itemsPerPage = 10;
+$currentPage = max(1, (int)($_GET['page'] ?? 1));
 
 /**
  * Nếu sau này bạn muốn lọc theo thời gian thì dùng thêm:
@@ -165,6 +281,7 @@ $sql = "
         o.contact_method,
         o.meeting_location,
         o.buyer_note,
+        {$cancelReasonSelect} AS cancel_reason,
         o.payment_method,
         o.payment_status,
         o.created_at,
@@ -182,9 +299,10 @@ $sql = "
 
 $params = [];
 $types = '';
+$whereSql = '';
 
 if ($keyword !== '') {
-    $sql .= " AND (
+    $whereSql .= " AND (
         b.title LIKE ?
         OR buyer.full_name LIKE ?
         OR seller.full_name LIKE ?
@@ -199,18 +317,48 @@ if ($keyword !== '') {
 }
 
 if ($statusFilter !== '') {
-    $sql .= " AND o.status = ?";
+    $whereSql .= " AND o.status = ?";
     $params[] = $statusFilter;
     $types .= 's';
 }
 
 if ($timeFilter === 'today') {
-    $sql .= " AND DATE(o.created_at) = CURDATE()";
+    $whereSql .= " AND DATE(o.created_at) = CURDATE()";
 } elseif ($timeFilter === '7days') {
-    $sql .= " AND o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+    $whereSql .= " AND o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
 } elseif ($timeFilter === '30days') {
-    $sql .= " AND o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+    $whereSql .= " AND o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
 }
+
+$countSql = "
+    SELECT COUNT(*) AS total
+    FROM orders o
+    LEFT JOIN bikes b ON o.bike_id = b.id
+    LEFT JOIN users buyer ON o.buyer_id = buyer.id
+    LEFT JOIN users seller ON b.seller_id = seller.id
+    WHERE 1 = 1
+    {$whereSql}
+";
+
+$filteredTotal = 0;
+$countStmt = $conn->prepare($countSql);
+if ($countStmt) {
+    if (!empty($params)) {
+        $countStmt->bind_param($types, ...$params);
+    }
+
+    $countStmt->execute();
+    $countResult = $countStmt->get_result();
+    $countRow = $countResult ? $countResult->fetch_assoc() : null;
+    $filteredTotal = isset($countRow['total']) ? (int)$countRow['total'] : 0;
+    $countStmt->close();
+}
+
+$totalPages = max(1, (int)ceil($filteredTotal / $itemsPerPage));
+$currentPage = min($currentPage, $totalPages);
+$offset = ($currentPage - 1) * $itemsPerPage;
+
+$sql .= $whereSql;
 
 switch ($sortFilter) {
     case 'oldest':
@@ -227,15 +375,18 @@ switch ($sortFilter) {
         break;
 }
 
-$sql .= " LIMIT 10";
+$sql .= " LIMIT ? OFFSET ?";
 
 $orderList = [];
 $stmt = $conn->prepare($sql);
 
 if ($stmt) {
-    if (!empty($params)) {
-        $stmt->bind_param($types, ...$params);
-    }
+    $queryParams = $params;
+    $queryTypes = $types . 'ii';
+    $queryParams[] = $itemsPerPage;
+    $queryParams[] = $offset;
+
+    $stmt->bind_param($queryTypes, ...$queryParams);
 
     $stmt->execute();
     $result = $stmt->get_result();
@@ -246,6 +397,9 @@ if ($stmt) {
 
     $stmt->close();
 }
+
+$firstItem = $filteredTotal > 0 ? $offset + 1 : 0;
+$lastItem = min($offset + count($orderList), $filteredTotal);
 ?>
 
 <!DOCTYPE html>
@@ -416,7 +570,7 @@ if ($stmt) {
                                 <p class="text-muted mb-0">Theo dõi các giao dịch giữa người mua và người bán trên toàn bộ nền tảng.</p>
                             </div>
                             <div class="text-muted small">
-                                Hiển thị <?= count($orderList) > 0 ? '1-' . count($orderList) : '0' ?> trong <?= e(number_format($totalOrders, 0, ',', '.')) ?> đơn mua
+                                Hiển thị <?= e((string)$firstItem) ?>-<?= e((string)$lastItem) ?> trong <?= e(number_format($filteredTotal, 0, ',', '.')) ?> đơn mua
                             </div>
                         </div>
 
@@ -487,13 +641,13 @@ if ($stmt) {
                                                                 Cập nhật
                                                             </button>
 
-                                                            <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn hủy đơn này?');">
-                                                                <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
-                                                                <input type="hidden" name="action_type" value="cancel">
-                                                                <button type="submit" name="update_order_status" class="btn btn-sm btn-danger rounded-pill px-3">
-                                                                    Hủy đơn
-                                                                </button>
-                                                            </form>
+                                                            <button
+                                                                type="button"
+                                                                class="btn btn-sm btn-danger rounded-pill px-3"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#orderCancelModal<?= (int)$order['id'] ?>">
+                                                                Hủy đơn
+                                                            </button>
                                                         <?php endif; ?>
                                                     </div>
                                                 </td>
@@ -519,11 +673,17 @@ if ($stmt) {
 
                         <nav aria-label="Điều hướng trang" class="mt-4">
                             <ul class="pagination justify-content-center mb-0">
-                                <li class="page-item disabled"><a class="page-link" href="#">Trước</a></li>
-                                <li class="page-item active"><a class="page-link" href="#">1</a></li>
-                                <li class="page-item"><a class="page-link" href="#">2</a></li>
-                                <li class="page-item"><a class="page-link" href="#">3</a></li>
-                                <li class="page-item"><a class="page-link" href="#">Sau</a></li>
+                                <li class="page-item <?= $currentPage <= 1 ? 'disabled' : '' ?>">
+                                    <a class="page-link" href="<?= $currentPage <= 1 ? '#' : e(paginationUrl($currentPage - 1)) ?>">Trước</a>
+                                </li>
+                                <?php for ($page = 1; $page <= $totalPages; $page++): ?>
+                                    <li class="page-item <?= $page === $currentPage ? 'active' : '' ?>">
+                                        <a class="page-link" href="<?= e(paginationUrl($page)) ?>"><?= e((string)$page) ?></a>
+                                    </li>
+                                <?php endfor; ?>
+                                <li class="page-item <?= $currentPage >= $totalPages ? 'disabled' : '' ?>">
+                                    <a class="page-link" href="<?= $currentPage >= $totalPages ? '#' : e(paginationUrl($currentPage + 1)) ?>">Sau</a>
+                                </li>
                             </ul>
                         </nav>
                     </div>
@@ -600,6 +760,12 @@ if ($stmt) {
                                     <strong>Ghi chú:</strong>
                                     <div><?= nl2br(e($order['buyer_note'] ?? '')) ?></div>
                                 </div>
+                                <?php if (($order['status'] ?? '') === 'cancelled' && trim((string)($order['cancel_reason'] ?? '')) !== ''): ?>
+                                    <div class="col-12">
+                                        <strong>Lý do hủy:</strong>
+                                        <div><?= nl2br(e($order['cancel_reason'])) ?></div>
+                                    </div>
+                                <?php endif; ?>
                                 <div class="col-12">
                                     <strong>Ngày tạo:</strong>
                                     <div><?= e(date('d/m/Y H:i', strtotime($order['created_at']))) ?></div>
@@ -638,13 +804,17 @@ if ($stmt) {
 
                                 <div class="mb-3">
                                     <label class="form-label">Trạng thái mới</label>
-                                    <select name="new_status" class="form-select" required>
+                                    <select name="new_status" class="form-select order-status-select" data-reason-target="#cancelReasonUpdate<?= (int)$order['id'] ?>" required>
                                         <option value="pending" <?= $order['status'] === 'pending' ? 'selected' : '' ?>>Chờ xác nhận</option>
                                         <option value="confirmed" <?= $order['status'] === 'confirmed' ? 'selected' : '' ?>>Đã xác nhận</option>
                                         <option value="in_progress" <?= $order['status'] === 'in_progress' ? 'selected' : '' ?>>Đang giao dịch</option>
                                         <option value="completed" <?= $order['status'] === 'completed' ? 'selected' : '' ?>>Hoàn tất</option>
                                         <option value="cancelled" <?= $order['status'] === 'cancelled' ? 'selected' : '' ?>>Đã hủy</option>
                                     </select>
+                                </div>
+                                <div class="mb-3 d-none" id="cancelReasonUpdate<?= (int)$order['id'] ?>">
+                                    <label class="form-label">Lý do hủy</label>
+                                    <textarea name="cancel_reason" class="form-control" rows="3" placeholder="Nhập lý do hủy đơn để lưu lại cho việc đối soát."></textarea>
                                 </div>
                             </div>
                             <div class="modal-footer">
@@ -661,7 +831,67 @@ if ($stmt) {
             </div>
         <?php endforeach; ?>
     <?php endif; ?>
+
+    <?php if (!empty($orderList)): ?>
+        <?php foreach ($orderList as $order): ?>
+            <?php if (($order['status'] ?? '') !== 'completed' && ($order['status'] ?? '') !== 'cancelled'): ?>
+                <div class="modal fade" id="orderCancelModal<?= (int)$order['id'] ?>" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <form method="post">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Hủy đơn mua</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+                                    <input type="hidden" name="action_type" value="cancel">
+                                    <input type="hidden" name="new_status" value="cancelled">
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Mã đơn</label>
+                                        <input type="text" class="form-control" value="DH<?= str_pad((string)$order['id'], 6, '0', STR_PAD_LEFT) ?>" readonly>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Lý do hủy <span class="text-danger">*</span></label>
+                                        <textarea name="cancel_reason" class="form-control" rows="4" required placeholder="Ví dụ: Người mua yêu cầu hủy, không liên hệ được người mua, thông tin đơn không hợp lệ..."></textarea>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="submit" name="update_order_status" class="btn btn-sm btn-danger rounded-pill px-3">
+                                        Xác nhận hủy
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-secondary rounded-pill px-3" data-bs-dismiss="modal">
+                                        Đóng
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+        <?php endforeach; ?>
+    <?php endif; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <script>
+        document.querySelectorAll('.order-status-select').forEach((select) => {
+            const target = document.querySelector(select.dataset.reasonTarget || '');
+            const textarea = target ? target.querySelector('textarea[name="cancel_reason"]') : null;
+
+            const syncReasonField = () => {
+                const shouldShow = select.value === 'cancelled';
+                if (target) {
+                    target.classList.toggle('d-none', !shouldShow);
+                }
+                if (textarea) {
+                    textarea.required = shouldShow;
+                }
+            };
+
+            select.addEventListener('change', syncReasonField);
+            syncReasonField();
+        });
+    </script>
 </body>
 
 </html>

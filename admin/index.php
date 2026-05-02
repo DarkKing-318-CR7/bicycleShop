@@ -18,43 +18,6 @@ $adminName = $currentUser['full_name'] ?? 'Quản trị viên';
 $message = '';
 $messageType = 'success';
 
-if (isset($_GET['msg'])) {
-    if ($_GET['msg'] === 'approved') {
-        $message = 'Đã duyệt tin đăng thành công.';
-    } elseif ($_GET['msg'] === 'rejected') {
-        $message = 'Đã từ chối tin đăng thành công.';
-    }
-}
-
-$message = '';
-$messageType = 'success';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['moderate_bike'])) {
-    $bikeId = (int) ($_POST['bike_id'] ?? 0);
-    $action = $_POST['action_type'] ?? '';
-
-    if ($bikeId > 0 && in_array($action, ['approve', 'reject'], true)) {
-        $newStatus = $action === 'approve' ? 'approved' : 'rejected';
-
-        $stmt = $conn->prepare("UPDATE bikes SET status = ?, updated_at = NOW() WHERE id = ?");
-        $stmt->bind_param("si", $newStatus, $bikeId);
-
-        if ($stmt->execute()) {
-            header('Location: index.php?msg=' . ($action === 'approve' ? 'approved' : 'rejected'));
-            exit;
-        } else {
-            $message = 'Có lỗi xảy ra khi cập nhật trạng thái tin đăng.';
-            $messageType = 'danger';
-        }
-
-        $stmt->close();
-    } else {
-        $message = 'Dữ liệu không hợp lệ.';
-        $messageType = 'danger';
-    }
-}
-
-
 function getInitials(string $name): string
 {
     $name = trim($name);
@@ -94,15 +57,93 @@ function fetchCount(mysqli $conn, string $sql, int $fallback = 0): int
     return isset($row['total']) ? (int) $row['total'] : $fallback;
 }
 
+function percentOf(int $value, int $total): int
+{
+    if ($total <= 0) {
+        return 0;
+    }
+
+    return (int) round(($value / $total) * 100);
+}
+
 $totalUsers = fetchCount($conn, "SELECT COUNT(*) AS total FROM users");
 $totalBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes");
-$pendingBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes WHERE status = 'pending'");
 $totalOrders = fetchCount($conn, "SELECT COUNT(*) AS total FROM orders");
 $totalCategories = fetchCount($conn, "SELECT COUNT(*) AS total FROM categories");
 $totalBrands = fetchCount($conn, "SELECT COUNT(*) AS total FROM brands");
-$rejectedBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes WHERE status = 'rejected'");
 $approvedTodayBikes = fetchCount($conn, "SELECT COUNT(*) AS total FROM bikes WHERE status = 'approved' AND DATE(updated_at) = CURDATE()");
 $newUsersToday = fetchCount($conn, "SELECT COUNT(*) AS total FROM users WHERE DATE(created_at) = CURDATE()");
+
+$bikeStatusCounts = [
+    'pending' => 0,
+    'approved' => 0,
+    'rejected' => 0,
+    'sold' => 0,
+    'completed' => 0,
+];
+$bikeStatusResult = $conn->query("SELECT status, COUNT(*) AS total FROM bikes GROUP BY status");
+
+if ($bikeStatusResult) {
+    while ($row = $bikeStatusResult->fetch_assoc()) {
+        $bikeStatusCounts[(string) $row['status']] = (int) $row['total'];
+    }
+}
+
+$pendingBikes = $bikeStatusCounts['pending'] ?? 0;
+$approvedBikes = $bikeStatusCounts['approved'] ?? 0;
+$rejectedBikes = $bikeStatusCounts['rejected'] ?? 0;
+$soldBikes = $bikeStatusCounts['sold'] ?? 0;
+$completedBikes = $bikeStatusCounts['completed'] ?? 0;
+
+$activityByDate = [];
+$activityResult = $conn->query("
+    SELECT DATE(created_at) AS day_key, COUNT(*) AS total
+    FROM bikes
+    WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+    GROUP BY DATE(created_at)
+");
+
+if ($activityResult) {
+    while ($row = $activityResult->fetch_assoc()) {
+        $activityByDate[$row['day_key']] = (int) $row['total'];
+    }
+}
+
+$bikeActivity = [];
+for ($i = 6; $i >= 0; $i--) {
+    $dateKey = date('Y-m-d', strtotime("-{$i} days"));
+    $bikeActivity[] = [
+        'label' => date('d/m', strtotime($dateKey)),
+        'total' => $activityByDate[$dateKey] ?? 0,
+    ];
+}
+
+$maxActivity = max(1, ...array_column($bikeActivity, 'total'));
+
+$statusDistribution = [
+    ['label' => 'Chưa kiểm duyệt', 'total' => $pendingBikes, 'color' => '#ffb703', 'class' => 'status-pending'],
+    ['label' => 'Đã duyệt', 'total' => $approvedBikes, 'color' => '#2f7d32', 'class' => 'status-approved'],
+    ['label' => 'Từ chối', 'total' => $rejectedBikes, 'color' => '#dc3545', 'class' => 'status-rejected'],
+    ['label' => 'Đã bán', 'total' => $soldBikes + $completedBikes, 'color' => '#0d6efd', 'class' => 'status-sold'],
+];
+$statusTotal = array_sum(array_column($statusDistribution, 'total'));
+$donutStops = [];
+$donutStart = 0;
+
+foreach ($statusDistribution as $statusItem) {
+    $slice = $statusTotal > 0 ? (($statusItem['total'] / $statusTotal) * 100) : 0;
+    $donutEnd = $donutStart + $slice;
+
+    if ($slice > 0) {
+        $donutStops[] = "{$statusItem['color']} {$donutStart}% {$donutEnd}%";
+    }
+
+    $donutStart = $donutEnd;
+}
+
+$donutGradient = !empty($donutStops)
+    ? 'conic-gradient(' . implode(', ', $donutStops) . ')'
+    : 'conic-gradient(#e8eee8 0 100%)';
 
 
 $recentBikeList = [];
@@ -151,7 +192,7 @@ if ($userResult) {
 function bikeStatusText(string $status): string
 {
     return match ($status) {
-        'pending' => 'Chờ duyệt',
+        'pending' => 'Chưa kiểm duyệt',
         'approved' => 'Đã duyệt',
         'rejected' => 'Từ chối',
         'sold' => 'Đã bán',
@@ -352,21 +393,9 @@ $adminInitials = getInitials($adminName);
                                                                 </button>
 
                                                                 <?php if ($bikeStatus === 'pending'): ?>
-                                                                    <form method="post" class="d-inline">
-                                                                        <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
-                                                                        <input type="hidden" name="action_type" value="approve">
-                                                                        <button type="submit" name="moderate_bike" class="btn btn-sm btn-success">
-                                                                            Duyệt
-                                                                        </button>
-                                                                    </form>
-
-                                                                    <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn từ chối tin đăng này?');">
-                                                                        <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
-                                                                        <input type="hidden" name="action_type" value="reject">
-                                                                        <button type="submit" name="moderate_bike" class="btn btn-sm btn-outline-danger">
-                                                                            Từ chối
-                                                                        </button>
-                                                                    </form>
+                                                                    <a href="moderation.php?bike_id=<?= (int) $bike['id'] ?>" class="btn btn-sm btn-success rounded-pill px-3" title="Đi kiểm duyệt">
+                                                                        <i class="bi bi-shield-check me-1"></i>Kiểm duyệt
+                                                                    </a>
                                                                 <?php endif; ?>
                                                             </div>
                                                         </td>
@@ -443,7 +472,7 @@ $adminInitials = getInitials($adminName);
                                 <h2 class="section-heading">Thao tác nhanh</h2>
                                 <div class="quick-grid">
                                     <a href="bikes.php" class="btn btn-success">Xem tất cả tin đăng</a>
-                                    <a href="bikes.php?status=pending" class="btn btn-outline-dark">Duyệt tin mới</a>
+                                    <a href="moderation.php" class="btn btn-outline-dark">Duyệt tin mới</a>
                                     <a href="users.php" class="btn btn-outline-dark">Quản lý người dùng</a>
                                     <a href="statistics.php" class="btn btn-outline-success">Xem báo cáo thống kê</a>
                                 </div>
@@ -455,8 +484,17 @@ $adminInitials = getInitials($adminName);
                         <div class="col-xl-6">
                             <div class="chart-card">
                                 <h2 class="section-heading">Hoạt động tin đăng</h2>
-                                <div class="chart-placeholder">
-                                    <div class="chart-line"></div>
+                                <div class="chart-bars">
+                                    <?php foreach ($bikeActivity as $item): ?>
+                                        <?php $barHeight = max(8, percentOf((int) $item['total'], $maxActivity)); ?>
+                                        <div class="chart-bar-item">
+                                            <div class="chart-bar-track">
+                                                <div class="chart-bar-fill" style="height: <?= (int) $barHeight ?>%;"></div>
+                                            </div>
+                                            <strong><?= e((string) $item['total']) ?></strong>
+                                            <span><?= e($item['label']) ?></span>
+                                        </div>
+                                    <?php endforeach; ?>
                                 </div>
                             </div>
                         </div>
@@ -464,7 +502,16 @@ $adminInitials = getInitials($adminName);
                             <div class="chart-card">
                                 <h2 class="section-heading">Phân bố trạng thái</h2>
                                 <div class="donut-wrap">
-                                    <div class="donut"></div>
+                                    <div class="donut" style="background: <?= e($donutGradient) ?>;"></div>
+                                </div>
+                                <div class="status-legend mt-3">
+                                    <?php foreach ($statusDistribution as $statusItem): ?>
+                                        <div class="status-legend-item">
+                                            <span style="background: <?= e($statusItem['color']) ?>;"></span>
+                                            <div><?= e($statusItem['label']) ?></div>
+                                            <strong><?= e(number_format((int) $statusItem['total'], 0, ',', '.')) ?></strong>
+                                        </div>
+                                    <?php endforeach; ?>
                                 </div>
                             </div>
                         </div>
@@ -552,17 +599,9 @@ $adminInitials = getInitials($adminName);
                         </div>
                         <div class="modal-footer">
                             <?php if (($bike['status'] ?? '') === 'pending'): ?>
-                                <form method="post" class="d-inline">
-                                    <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
-                                    <input type="hidden" name="action_type" value="approve">
-                                    <button type="submit" name="moderate_bike" class="btn btn-success">Duyệt</button>
-                                </form>
-
-                                <form method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn từ chối tin đăng này?');">
-                                    <input type="hidden" name="bike_id" value="<?= (int) $bike['id'] ?>">
-                                    <input type="hidden" name="action_type" value="reject">
-                                    <button type="submit" name="moderate_bike" class="btn btn-outline-danger">Từ chối</button>
-                                </form>
+                                <a href="moderation.php?bike_id=<?= (int) $bike['id'] ?>" class="btn btn-success rounded-pill px-3">
+                                    <i class="bi bi-shield-check me-1"></i>Kiểm duyệt
+                                </a>
                             <?php endif; ?>
 
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
