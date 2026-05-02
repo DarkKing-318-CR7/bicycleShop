@@ -184,6 +184,7 @@ function updateSellerOrderStatus(mysqli $conn, int $orderId, int $sellerId, stri
 }
 
 $amountColumn = getOrderAmountColumn($conn);
+$cancelReasonSelect = tableColumnExists($conn, 'orders', 'cancel_reason') ? 'o.cancel_reason' : "''";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order_status'])) {
     $orderId = (int) ($_POST['order_id'] ?? 0);
@@ -251,6 +252,7 @@ $sql = "
         o.{$amountColumn} AS order_total,
         o.contact_method,
         o.meeting_location,
+        {$cancelReasonSelect} AS cancel_reason,
         COALESCE(b.title, 'Xe ??p th? thao') AS bike_title,
         COALESCE(u.full_name, 'Ng??i mua') AS buyer_name,
         COALESCE(img.image_url, ?) AS image_url
@@ -482,6 +484,9 @@ if ($stmt) {
                                             <span><i class="bi bi-person me-1"></i> Người mua: <?= e($order['buyer_name'] ?? 'Người mua') ?></span>
                                             <span><i class="bi bi-cash me-1"></i> <?= e(formatPriceVnd($order['order_total'] ?? 0)) ?></span>
                                             <span><i class="bi bi-calendar-event me-1"></i> <?= e(formatDateVi($order['created_at'] ?? null)) ?></span>
+                                            <?php if (($order['status'] ?? '') === 'cancelled' && trim((string)($order['cancel_reason'] ?? '')) !== ''): ?>
+                                                <span class="text-danger"><i class="bi bi-info-circle me-1"></i> Lý do hủy: <?= e($order['cancel_reason']) ?></span>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                     <div class="listing-side">

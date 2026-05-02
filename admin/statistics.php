@@ -46,102 +46,126 @@ function getInitials(string $name): string
 
 function tableExists(mysqli $conn, string $table): bool
 {
-    try {
-        $stmt = $conn->prepare("
-            SELECT COUNT(*) AS total
-            FROM information_schema.TABLES
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = ?
-            LIMIT 1
-        ");
-        if (!$stmt) {
-            return false;
-        }
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) AS total
+        FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+        LIMIT 1
+    ");
 
-        $stmt->bind_param("s", $table);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $row = $result ? $result->fetch_assoc() : null;
-        $exists = isset($row['total']) && (int) $row['total'] > 0;
-        $stmt->close();
-
-        return $exists;
-    } catch (Throwable $error) {
+    if (!$stmt) {
         return false;
     }
+
+    $stmt->bind_param('s', $table);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    return (int)($row['total'] ?? 0) > 0;
 }
 
 function columnExists(mysqli $conn, string $table, string $column): bool
 {
-    try {
-        $stmt = $conn->prepare("
-            SELECT COUNT(*) AS total
-            FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = ?
-              AND COLUMN_NAME = ?
-            LIMIT 1
-        ");
-        if (!$stmt) {
-            return false;
-        }
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) AS total
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND COLUMN_NAME = ?
+        LIMIT 1
+    ");
 
-        $stmt->bind_param("ss", $table, $column);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $row = $result ? $result->fetch_assoc() : null;
-        $exists = isset($row['total']) && (int) $row['total'] > 0;
-        $stmt->close();
-
-        return $exists;
-    } catch (Throwable $error) {
+    if (!$stmt) {
         return false;
     }
+
+    $stmt->bind_param('ss', $table, $column);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    return (int)($row['total'] ?? 0) > 0;
 }
 
-function fetchValue(mysqli $conn, string $sql, int|float $fallback = 0): int|float
+function dateColumn(mysqli $conn, string $table): ?string
 {
-    try {
-        $result = $conn->query($sql);
-        if (!$result) {
-            return $fallback;
+    foreach (['created_at', 'order_date', 'created_date'] as $candidate) {
+        if (columnExists($conn, $table, $candidate)) {
+            return $candidate;
         }
+    }
 
-        $row = $result->fetch_assoc();
-        if (!$row) {
-            return $fallback;
-        }
+    return null;
+}
 
-        $value = reset($row);
+function bindParams(mysqli_stmt $stmt, string $types, array $params): void
+{
+    if ($types === '' || empty($params)) {
+        return;
+    }
 
-        return is_numeric($value) ? $value + 0 : $fallback;
-    } catch (Throwable $error) {
+    $refs = [$types];
+    foreach ($params as $key => $value) {
+        $refs[] = &$params[$key];
+    }
+
+    call_user_func_array([$stmt, 'bind_param'], $refs);
+}
+
+function fetchValuePrepared(mysqli $conn, string $sql, string $types = '', array $params = [], int|float $fallback = 0): int|float
+{
+    $stmt = $conn->prepare($sql);
+
+    if (!$stmt) {
         return $fallback;
     }
+
+    bindParams($stmt, $types, $params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    if (!$row) {
+        return $fallback;
+    }
+
+    $value = reset($row);
+
+    return is_numeric($value) ? $value + 0 : $fallback;
 }
 
-function fetchRows(mysqli $conn, string $sql): array
+function fetchRowsPrepared(mysqli $conn, string $sql, string $types = '', array $params = []): array
 {
     $rows = [];
+    $stmt = $conn->prepare($sql);
 
-    try {
-        $result = $conn->query($sql);
-
-        if ($result) {
-            while ($row = $result->fetch_assoc()) {
-                $rows[] = $row;
-            }
-        }
-    } catch (Throwable $error) {
-        return [];
+    if (!$stmt) {
+        return $rows;
     }
+
+    bindParams($stmt, $types, $params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $rows[] = $row;
+        }
+    }
+
+    $stmt->close();
 
     return $rows;
 }
 
 function moneyVnd(int|float $amount): string
 {
-    return number_format((float) $amount, 0, ',', '.') . 'đ';
+    return number_format((float)$amount, 0, ',', '.') . 'đ';
 }
 
 function orderStatusLabel(string $status): string
@@ -149,90 +173,282 @@ function orderStatusLabel(string $status): string
     return match ($status) {
         'pending' => 'Chờ xác nhận',
         'confirmed' => 'Đã xác nhận',
-        'shipping' => 'Đang giao dịch',
+        'in_progress', 'shipping' => 'Đang giao dịch',
         'completed' => 'Hoàn tất',
         'cancelled' => 'Đã hủy',
         default => $status,
     };
 }
 
-$adminInitials = getInitials($adminName);
+function rangeMeta(string $range): array
+{
+    $today = new DateTimeImmutable('today');
 
+    return match ($range) {
+        'today' => [
+            'label' => 'hôm nay',
+            'start' => $today->format('Y-m-d 00:00:00'),
+            'end' => $today->modify('+1 day')->format('Y-m-d 00:00:00'),
+        ],
+        'week' => [
+            'label' => 'tuần này',
+            'start' => $today->modify('monday this week')->format('Y-m-d 00:00:00'),
+            'end' => $today->modify('monday next week')->format('Y-m-d 00:00:00'),
+        ],
+        'year' => [
+            'label' => 'năm nay',
+            'start' => $today->format('Y-01-01 00:00:00'),
+            'end' => $today->modify('first day of january next year')->format('Y-m-d 00:00:00'),
+        ],
+        'all' => [
+            'label' => 'tất cả',
+            'start' => null,
+            'end' => null,
+        ],
+        default => [
+            'label' => 'tháng này',
+            'start' => $today->format('Y-m-01 00:00:00'),
+            'end' => $today->modify('first day of next month')->format('Y-m-d 00:00:00'),
+        ],
+    };
+}
+
+function timeCondition(?string $column, string $alias, array $rangeMeta): array
+{
+    if ($column === null || $rangeMeta['start'] === null || $rangeMeta['end'] === null) {
+        return ['', '', []];
+    }
+
+    return [" AND {$alias}.`{$column}` >= ? AND {$alias}.`{$column}` < ?", 'ss', [$rangeMeta['start'], $rangeMeta['end']]];
+}
+
+function chartBuckets(string $range): array
+{
+    $today = new DateTimeImmutable('today');
+    $buckets = [];
+
+    if ($range === 'today') {
+        for ($hour = 0; $hour < 24; $hour++) {
+            $key = str_pad((string)$hour, 2, '0', STR_PAD_LEFT);
+            $buckets[$key] = ['label' => $key . 'h', 'total' => 0];
+        }
+
+        return $buckets;
+    }
+
+    if ($range === 'week') {
+        $start = $today->modify('monday this week');
+        for ($i = 0; $i < 7; $i++) {
+            $date = $start->modify("+{$i} day");
+            $buckets[$date->format('Y-m-d')] = ['label' => $date->format('d/m'), 'total' => 0];
+        }
+
+        return $buckets;
+    }
+
+    if ($range === 'year') {
+        for ($month = 1; $month <= 12; $month++) {
+            $key = $today->format('Y-') . str_pad((string)$month, 2, '0', STR_PAD_LEFT);
+            $buckets[$key] = ['label' => 'T' . $month, 'total' => 0];
+        }
+
+        return $buckets;
+    }
+
+    if ($range === 'all') {
+        return [];
+    }
+
+    $start = $today->modify('first day of this month');
+    $lastDay = (int)$start->format('t');
+    $weekCount = (int)ceil($lastDay / 7);
+
+    for ($week = 1; $week <= $weekCount; $week++) {
+        $fromDay = (($week - 1) * 7) + 1;
+        $toDay = min($week * 7, $lastDay);
+        $buckets[(string)$week] = [
+            'label' => 'Tuần ' . $week . ' (' . str_pad((string)$fromDay, 2, '0', STR_PAD_LEFT) . '-' . str_pad((string)$toDay, 2, '0', STR_PAD_LEFT) . ')',
+            'total' => 0,
+        ];
+    }
+
+    return $buckets;
+}
+
+$adminInitials = getInitials($adminName);
+$allowedRanges = ['today', 'week', 'month', 'year', 'all'];
+$range = $_GET['range'] ?? 'month';
+
+if (!in_array($range, $allowedRanges, true)) {
+    $range = 'month';
+}
+
+$rangeMeta = rangeMeta($range);
 $hasOrders = tableExists($conn, 'orders');
 $hasBikes = tableExists($conn, 'bikes');
 $hasUsers = tableExists($conn, 'users');
+$orderDateColumn = $hasOrders ? dateColumn($conn, 'orders') : null;
+$bikeDateColumn = $hasBikes ? dateColumn($conn, 'bikes') : null;
+$userDateColumn = $hasUsers ? dateColumn($conn, 'users') : null;
+$hasOrderStatus = $hasOrders && columnExists($conn, 'orders', 'status');
 
-$revenueColumn = null;
+$valueColumn = null;
 if ($hasOrders) {
-    foreach (['total_price', 'total_amount', 'price', 'amount'] as $candidate) {
+    foreach (['total_price', 'total_amount', 'offered_price', 'price', 'amount'] as $candidate) {
         if (columnExists($conn, 'orders', $candidate)) {
-            $revenueColumn = $candidate;
+            $valueColumn = $candidate;
             break;
         }
     }
 }
 
-$totalRevenue = ($hasOrders && $revenueColumn !== null && columnExists($conn, 'orders', 'status'))
-    ? fetchValue($conn, "SELECT COALESCE(SUM(`$revenueColumn`), 0) FROM orders WHERE status = 'completed'")
-    : 0;
+$quantityExpression = ($hasOrders && columnExists($conn, 'orders', 'quantity')) ? 'COALESCE(o.quantity, 1)' : '1';
+[$orderTimeSql, $orderTimeTypes, $orderTimeParams] = timeCondition($orderDateColumn, 'o', $rangeMeta);
+[$bikeTimeSql, $bikeTimeTypes, $bikeTimeParams] = timeCondition($bikeDateColumn, 'b', $rangeMeta);
+[$userTimeSql, $userTimeTypes, $userTimeParams] = timeCondition($userDateColumn, 'u', $rangeMeta);
 
-$totalOrders = $hasOrders ? fetchValue($conn, "SELECT COUNT(*) FROM orders") : 0;
-$totalUsers = $hasUsers ? fetchValue($conn, "SELECT COUNT(*) FROM users") : 0;
-$totalBikes = $hasBikes ? fetchValue($conn, "SELECT COUNT(*) FROM bikes") : 0;
-$pendingBikes = ($hasBikes && columnExists($conn, 'bikes', 'status')) ? fetchValue($conn, "SELECT COUNT(*) FROM bikes WHERE status = 'pending'") : 0;
-$rejectedBikes = ($hasBikes && columnExists($conn, 'bikes', 'status')) ? fetchValue($conn, "SELECT COUNT(*) FROM bikes WHERE status = 'rejected'") : 0;
+$transactionValue = 0;
+$approvedBikes = 0;
+$primaryMetricLabel = 'Tin đã duyệt';
+$primaryMetricValue = '0';
+$primaryMetricIcon = 'bi-patch-check';
+
+if ($hasOrders && $valueColumn !== null && $hasOrderStatus) {
+    $transactionValue = fetchValuePrepared(
+        $conn,
+        "SELECT COALESCE(SUM(o.`{$valueColumn}` * {$quantityExpression}), 0) FROM orders o WHERE o.status = 'completed' {$orderTimeSql}",
+        $orderTimeTypes,
+        $orderTimeParams
+    );
+    $primaryMetricLabel = 'Giá trị giao dịch';
+    $primaryMetricValue = moneyVnd($transactionValue);
+    $primaryMetricIcon = 'bi-cash-coin';
+} elseif ($hasBikes && columnExists($conn, 'bikes', 'status')) {
+    $approvedBikes = fetchValuePrepared(
+        $conn,
+        "SELECT COUNT(*) FROM bikes b WHERE b.status = 'approved' {$bikeTimeSql}",
+        $bikeTimeTypes,
+        $bikeTimeParams
+    );
+    $primaryMetricValue = number_format((int)$approvedBikes, 0, ',', '.');
+}
+
+$ordersChartType = 'line';
+$totalOrders = $hasOrders
+    ? fetchValuePrepared($conn, "SELECT COUNT(*) FROM orders o WHERE 1 = 1 {$orderTimeSql}", $orderTimeTypes, $orderTimeParams)
+    : 0;
+$totalUsers = $hasUsers
+    ? fetchValuePrepared($conn, "SELECT COUNT(*) FROM users u WHERE 1 = 1 {$userTimeSql}", $userTimeTypes, $userTimeParams)
+    : 0;
+$totalBikes = $hasBikes
+    ? fetchValuePrepared($conn, "SELECT COUNT(*) FROM bikes b WHERE 1 = 1 {$bikeTimeSql}", $bikeTimeTypes, $bikeTimeParams)
+    : 0;
+$pendingBikes = ($hasBikes && columnExists($conn, 'bikes', 'status'))
+    ? fetchValuePrepared($conn, "SELECT COUNT(*) FROM bikes b WHERE b.status = 'pending' {$bikeTimeSql}", $bikeTimeTypes, $bikeTimeParams)
+    : 0;
+$rejectedBikes = ($hasBikes && columnExists($conn, 'bikes', 'status'))
+    ? fetchValuePrepared($conn, "SELECT COUNT(*) FROM bikes b WHERE b.status = 'rejected' {$bikeTimeSql}", $bikeTimeTypes, $bikeTimeParams)
+    : 0;
 
 $orderDateLabels = [];
 $orderDateValues = [];
-$orderDateMap = [];
 $orderDateDetails = [];
+$buckets = chartBuckets($range);
 
-for ($i = 6; $i >= 0; $i--) {
-    $date = date('Y-m-d', strtotime("-$i days"));
-    $orderDateMap[$date] = 0;
-}
+if ($hasOrders && $orderDateColumn !== null) {
+    if ($range === 'today') {
+        $groupSelect = "DATE_FORMAT(o.`{$orderDateColumn}`, '%H')";
+        $orderBy = 'bucket ASC';
+    } elseif ($range === 'year') {
+        $groupSelect = "DATE_FORMAT(o.`{$orderDateColumn}`, '%Y-%m')";
+        $orderBy = 'bucket ASC';
+    } elseif ($range === 'all') {
+        $groupSelect = "DATE_FORMAT(o.`{$orderDateColumn}`, '%Y')";
+        $orderBy = 'bucket ASC';
+    } elseif ($range === 'month') {
+        $groupSelect = "CAST(FLOOR((DAYOFMONTH(o.`{$orderDateColumn}`) - 1) / 7) + 1 AS CHAR)";
+        $orderBy = 'bucket ASC';
+    } else {
+        $groupSelect = "DATE(o.`{$orderDateColumn}`)";
+        $orderBy = 'bucket ASC';
+    }
 
-if ($hasOrders && columnExists($conn, 'orders', 'created_at')) {
-    $rows = fetchRows($conn, "
-        SELECT DATE(created_at) AS order_date, COUNT(*) AS total
-        FROM orders
-        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
-        GROUP BY DATE(created_at)
-        ORDER BY order_date ASC
-    ");
+    $rows = fetchRowsPrepared(
+        $conn,
+        "SELECT {$groupSelect} AS bucket, COUNT(*) AS total
+         FROM orders o
+         WHERE 1 = 1 {$orderTimeSql}
+         GROUP BY bucket
+         ORDER BY {$orderBy}",
+        $orderTimeTypes,
+        $orderTimeParams
+    );
 
-    foreach ($rows as $row) {
-        $orderDateMap[$row['order_date']] = (int) $row['total'];
+    if ($range === 'all') {
+        foreach ($rows as $row) {
+            $year = (string)$row['bucket'];
+            $buckets[$year] = [
+                'label' => $year,
+                'total' => (int)$row['total'],
+            ];
+        }
+
+        if (count($buckets) === 1) {
+            $onlyYear = array_key_first($buckets);
+            $onlyTotal = $buckets[$onlyYear]['total'];
+
+            $buckets = [
+                (string)((int)$onlyYear - 1) => [
+                    'label' => (string)((int)$onlyYear - 1),
+                    'total' => 0,
+                ],
+                $onlyYear => [
+                    'label' => $onlyYear,
+                    'total' => $onlyTotal,
+                ],
+            ];
+        }
+    } else {
+        foreach ($rows as $row) {
+            $bucket = (string)$row['bucket'];
+            if (isset($buckets[$bucket])) {
+                $buckets[$bucket]['total'] = (int)$row['total'];
+            }
+        }
     }
 }
 
-foreach ($orderDateMap as $date => $total) {
-    $orderDateLabels[] = date('d/m', strtotime($date));
-    $orderDateValues[] = $total;
+foreach ($buckets as $key => $bucket) {
+    $orderDateLabels[] = $bucket['label'];
+    $orderDateValues[] = (int)$bucket['total'];
     $orderDateDetails[] = [
-        'date' => date('d/m/Y', strtotime($date)),
-        'total' => (int) $total,
+        'date' => $bucket['label'],
+        'total' => (int)$bucket['total'],
     ];
 }
 
 $orderStatusLabels = [];
 $orderStatusValues = [];
 $orderStatusDetails = [];
-if ($hasOrders && columnExists($conn, 'orders', 'status')) {
-    $rows = fetchRows($conn, "
-        SELECT status, COUNT(*) AS total
-        FROM orders
-        GROUP BY status
-        ORDER BY total DESC
-    ");
+if ($hasOrderStatus) {
+    $rows = fetchRowsPrepared(
+        $conn,
+        "SELECT o.status, COUNT(*) AS total
+         FROM orders o
+         WHERE 1 = 1 {$orderTimeSql}
+         GROUP BY o.status
+         ORDER BY total DESC",
+        $orderTimeTypes,
+        $orderTimeParams
+    );
 
     foreach ($rows as $row) {
-        $statusLabel = orderStatusLabel((string) $row['status']);
+        $statusLabel = orderStatusLabel((string)$row['status']);
         $orderStatusLabels[] = $statusLabel;
-        $orderStatusValues[] = (int) $row['total'];
+        $orderStatusValues[] = (int)$row['total'];
         $orderStatusDetails[] = [
             'status' => $statusLabel,
-            'total' => (int) $row['total'],
+            'total' => (int)$row['total'],
         ];
     }
 }
@@ -241,24 +457,29 @@ $topBikeLabels = [];
 $topBikeValues = [];
 $topBikeDetails = [];
 if ($hasOrders && $hasBikes && columnExists($conn, 'orders', 'bike_id')) {
-    $rows = fetchRows($conn, "
-        SELECT o.bike_id, COALESCE(b.title, CONCAT('Xe #', o.bike_id)) AS bike_title, COUNT(*) AS total
-        FROM orders o
-        LEFT JOIN bikes b ON o.bike_id = b.id
-        WHERE o.bike_id IS NOT NULL
-        GROUP BY o.bike_id, b.title
-        ORDER BY total DESC
-        LIMIT 5
-    ");
+    $completedOrderSql = $hasOrderStatus ? " AND o.status = 'completed'" : '';
+    $soldQuantityExpression = columnExists($conn, 'orders', 'quantity') ? 'COALESCE(o.quantity, 1)' : '1';
+    $rows = fetchRowsPrepared(
+        $conn,
+        "SELECT o.bike_id, COALESCE(b.title, CONCAT('Xe #', o.bike_id)) AS bike_title, SUM({$soldQuantityExpression}) AS total
+         FROM orders o
+         LEFT JOIN bikes b ON o.bike_id = b.id
+         WHERE o.bike_id IS NOT NULL {$completedOrderSql} {$orderTimeSql}
+         GROUP BY o.bike_id, b.title
+         ORDER BY total DESC
+         LIMIT 5",
+        $orderTimeTypes,
+        $orderTimeParams
+    );
 
     foreach ($rows as $index => $row) {
-        $topBikeLabels[] = (string) $row['bike_title'];
-        $topBikeValues[] = (int) $row['total'];
+        $topBikeLabels[] = (string)$row['bike_title'];
+        $topBikeValues[] = (int)$row['total'];
         $topBikeDetails[] = [
             'rank' => $index + 1,
-            'bike_id' => (int) $row['bike_id'],
-            'bike_title' => (string) $row['bike_title'],
-            'total' => (int) $row['total'],
+            'bike_id' => (int)$row['bike_id'],
+            'bike_title' => (string)$row['bike_title'],
+            'total' => (int)$row['total'],
         ];
     }
 }
@@ -267,31 +488,41 @@ $topSellerLabels = [];
 $topSellerValues = [];
 $topSellerDetails = [];
 if ($hasBikes && columnExists($conn, 'bikes', 'seller_id')) {
-    $joinUsers = $hasUsers ? "LEFT JOIN users u ON b.seller_id = u.id" : "";
+    $joinUsers = $hasUsers ? 'LEFT JOIN users u ON b.seller_id = u.id' : '';
     $sellerName = $hasUsers ? "COALESCE(u.full_name, CONCAT('Seller #', b.seller_id))" : "CONCAT('Seller #', b.seller_id)";
-    $rows = fetchRows($conn, "
-        SELECT b.seller_id, $sellerName AS seller_name, COUNT(*) AS total
-        FROM bikes b
-        $joinUsers
-        WHERE b.seller_id IS NOT NULL
-        GROUP BY b.seller_id" . ($hasUsers ? ", u.full_name" : "") . "
-        ORDER BY total DESC
-        LIMIT 5
-    ");
+    $rows = fetchRowsPrepared(
+        $conn,
+        "SELECT b.seller_id, {$sellerName} AS seller_name, COUNT(*) AS total
+         FROM bikes b
+         {$joinUsers}
+         WHERE b.seller_id IS NOT NULL {$bikeTimeSql}
+         GROUP BY b.seller_id" . ($hasUsers ? ', u.full_name' : '') . "
+         ORDER BY total DESC
+         LIMIT 5",
+        $bikeTimeTypes,
+        $bikeTimeParams
+    );
 
     foreach ($rows as $index => $row) {
-        $topSellerLabels[] = (string) $row['seller_name'];
-        $topSellerValues[] = (int) $row['total'];
+        $topSellerLabels[] = (string)$row['seller_name'];
+        $topSellerValues[] = (int)$row['total'];
         $topSellerDetails[] = [
             'rank' => $index + 1,
-            'seller_id' => (int) $row['seller_id'],
-            'seller_name' => (string) $row['seller_name'],
-            'total' => (int) $row['total'],
+            'seller_id' => (int)$row['seller_id'],
+            'seller_name' => (string)$row['seller_name'],
+            'total' => (int)$row['total'],
         ];
     }
 }
 
-$hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn === null;
+$hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers;
+$rangeOptions = [
+    'today' => 'Hôm nay',
+    'week' => 'Tuần này',
+    'month' => 'Tháng này',
+    'year' => 'Năm nay',
+    'all' => 'Tất cả',
+];
 ?>
 <!DOCTYPE html>
 <html lang="vi">
@@ -347,7 +578,7 @@ $hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn 
                             <li><a class="menu-link" href="categories.php"><i class="bi bi-tags"></i> Danh mục xe</a></li>
                             <li><a class="menu-link" href="brands.php"><i class="bi bi-award"></i> Thương hiệu</a></li>
                             <li><a class="menu-link" href="moderation.php"><i class="bi bi-shield-check"></i> Kiểm duyệt</a></li>
-                            <li><a class="menu-link active" href="statistics.php"><i class="bi bi-bar-chart"></i> Thống kê</a></li>
+                            <li><a class="menu-link active" href="analytics.php"><i class="bi bi-bar-chart"></i> Thống kê</a></li>
                             <li><a class="menu-link" href="settings.php"><i class="bi bi-gear"></i> Cài đặt</a></li>
                             <li><a class="menu-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> Đăng xuất</a></li>
                         </ul>
@@ -357,44 +588,56 @@ $hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn 
                 <div class="col-xl-10 col-lg-9">
                     <div class="page-breadcrumb">Admin / Thống kê</div>
                     <div class="page-kicker">Thống kê</div>
-                    <h1 class="section-title mb-2">Thống kê hệ thống</h1>
-                    <p class="section-subtitle mb-4">Theo dõi doanh thu, đơn hàng, tin đăng và hoạt động người bán trên marketplace.</p>
+                    <div class="d-flex flex-column flex-xl-row align-items-xl-end justify-content-between gap-3 mb-4">
+                        <div>
+                            <h1 class="section-title mb-2">Thống kê hệ thống</h1>
+                            <p class="section-subtitle mb-0">Thống kê <?= e($rangeMeta['label']) ?> về đơn hàng, tin đăng và hoạt động người bán trên marketplace.</p>
+                        </div>
+                        <form method="get" action="analytics.php" class="d-flex flex-wrap gap-2 align-items-center">
+                            <label class="text-muted small" for="range">Khoảng thời gian</label>
+                            <select id="range" name="range" class="form-select" onchange="this.form.submit()">
+                                <?php foreach ($rangeOptions as $value => $label): ?>
+                                    <option value="<?= e($value) ?>" <?= $range === $value ? 'selected' : '' ?>><?= e($label) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </form>
+                    </div>
 
                     <?php if ($hasMissingCoreData): ?>
                         <div class="alert alert-warning">
-                            Một số bảng hoặc cột thống kê chưa có đủ trong database, các biểu đồ liên quan sẽ hiển thị rỗng.
+                            Một số bảng thống kê chưa có trong database, các biểu đồ liên quan sẽ hiển thị rỗng.
                         </div>
                     <?php endif; ?>
 
                     <div class="row g-4 mb-4">
                         <div class="col-md-6 col-xl-4 col-xxl-2">
-                            <div class="stats-card"><span class="stats-icon"><i class="bi bi-cash-coin"></i></span>
-                                <div><small>Tổng doanh thu</small><strong><?= e(moneyVnd($totalRevenue)) ?></strong></div>
+                            <div class="stats-card"><span class="stats-icon"><i class="bi <?= e($primaryMetricIcon) ?>"></i></span>
+                                <div><small><?= e($primaryMetricLabel) ?></small><strong><?= e($primaryMetricValue) ?></strong></div>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
                             <div class="stats-card"><span class="stats-icon"><i class="bi bi-receipt"></i></span>
-                                <div><small>Tổng đơn hàng</small><strong><?= e(number_format((int) $totalOrders, 0, ',', '.')) ?></strong></div>
+                                <div><small>Tổng đơn hàng</small><strong><?= e(number_format((int)$totalOrders, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
                             <div class="stats-card"><span class="stats-icon"><i class="bi bi-people"></i></span>
-                                <div><small>Tổng người dùng</small><strong><?= e(number_format((int) $totalUsers, 0, ',', '.')) ?></strong></div>
+                                <div><small>Tổng người dùng mới</small><strong><?= e(number_format((int)$totalUsers, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
                             <div class="stats-card"><span class="stats-icon"><i class="bi bi-card-list"></i></span>
-                                <div><small>Tổng tin đăng</small><strong><?= e(number_format((int) $totalBikes, 0, ',', '.')) ?></strong></div>
+                                <div><small>Tổng tin đăng</small><strong><?= e(number_format((int)$totalBikes, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
                             <div class="stats-card"><span class="stats-icon"><i class="bi bi-hourglass-split"></i></span>
-                                <div><small>Tin chờ duyệt</small><strong><?= e(number_format((int) $pendingBikes, 0, ',', '.')) ?></strong></div>
+                                <div><small>Tin chờ duyệt</small><strong><?= e(number_format((int)$pendingBikes, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl-4 col-xxl-2">
                             <div class="stats-card"><span class="stats-icon"><i class="bi bi-x-circle"></i></span>
-                                <div><small>Tin bị từ chối</small><strong><?= e(number_format((int) $rejectedBikes, 0, ',', '.')) ?></strong></div>
+                                <div><small>Tin bị từ chối</small><strong><?= e(number_format((int)$rejectedBikes, 0, ',', '.')) ?></strong></div>
                             </div>
                         </div>
                     </div>
@@ -402,7 +645,7 @@ $hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn 
                     <div class="row g-4">
                         <div class="col-xl-8">
                             <div class="chart-card">
-                                <h2 class="section-heading">Đơn hàng theo ngày</h2>
+                                <h2 class="section-heading">Đơn hàng theo thời gian</h2>
                                 <?php if (array_sum($orderDateValues) > 0): ?>
                                     <div class="chart-placeholder"><canvas id="ordersByDayChart"></canvas></div>
                                 <?php else: ?>
@@ -425,7 +668,7 @@ $hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn 
                     <div class="row g-4 mt-1">
                         <div class="col-xl-6">
                             <div class="chart-card">
-                                <h2 class="section-heading">Top 5 xe bán chạy</h2>
+                                <h2 class="section-heading">Top 5 xe giao dịch thành công</h2>
                                 <?php if (array_sum($topBikeValues) > 0): ?>
                                     <div class="chart-placeholder"><canvas id="topBikesChart"></canvas></div>
                                 <?php else: ?>
@@ -476,6 +719,7 @@ $hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn 
     <script>
         const ordersByDayLabels = <?= json_encode($orderDateLabels, JSON_UNESCAPED_UNICODE) ?>;
         const ordersByDayValues = <?= json_encode($orderDateValues, JSON_UNESCAPED_UNICODE) ?>;
+        const ordersChartType = <?= json_encode($ordersChartType, JSON_UNESCAPED_UNICODE) ?>;
         const orderStatusLabels = <?= json_encode($orderStatusLabels, JSON_UNESCAPED_UNICODE) ?>;
         const orderStatusValues = <?= json_encode($orderStatusValues, JSON_UNESCAPED_UNICODE) ?>;
         const topBikeLabels = <?= json_encode($topBikeLabels, JSON_UNESCAPED_UNICODE) ?>;
@@ -484,8 +728,8 @@ $hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn 
         const topSellerValues = <?= json_encode($topSellerValues, JSON_UNESCAPED_UNICODE) ?>;
         const chartDetailData = {
             ordersByDayChart: {
-                title: 'Bảng đơn hàng theo ngày',
-                columns: ['Ngày', 'Số đơn hàng'],
+                title: 'Bảng đơn hàng theo thời gian',
+                columns: ['Mốc thời gian', 'Số đơn hàng'],
                 rows: <?= json_encode(array_map(fn($row) => [$row['date'], number_format($row['total'], 0, ',', '.')], $orderDateDetails), JSON_UNESCAPED_UNICODE) ?>
             },
             orderStatusChart: {
@@ -494,8 +738,8 @@ $hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn 
                 rows: <?= json_encode(array_map(fn($row) => [$row['status'], number_format($row['total'], 0, ',', '.')], $orderStatusDetails), JSON_UNESCAPED_UNICODE) ?>
             },
             topBikesChart: {
-                title: 'Bảng xếp hạng Top 5 xe bán chạy',
-                columns: ['Hạng', 'Mã xe', 'Tên xe', 'Số đơn'],
+                title: 'Bảng xếp hạng Top 5 xe giao dịch thành công',
+                columns: ['Hạng', 'Mã xe', 'Tên xe', 'Số lượng hoàn tất'],
                 rows: <?= json_encode(array_map(fn($row) => [$row['rank'], '#' . $row['bike_id'], $row['bike_title'], number_format($row['total'], 0, ',', '.')], $topBikeDetails), JSON_UNESCAPED_UNICODE) ?>
             },
             topSellersChart: {
@@ -511,15 +755,17 @@ $hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn 
 
         function renderChart(id, config) {
             const canvas = document.getElementById(id);
-            if (canvas) {
-                canvas.style.cursor = 'pointer';
-                const chart = new Chart(canvas, {
-                    ...config,
-                    options: config.options
-                });
-                canvas.addEventListener('click', () => openChartDetail(id));
-                return chart;
+            if (!canvas) {
+                return null;
             }
+
+            canvas.style.cursor = 'pointer';
+            const chart = new Chart(canvas, {
+                ...config,
+                options: config.options
+            });
+            canvas.addEventListener('click', () => openChartDetail(id));
+            return chart;
         }
 
         function escapeHtml(value) {
@@ -529,7 +775,7 @@ $hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn 
                 '>': '&gt;',
                 '"': '&quot;',
                 "'": '&#039;'
-            }[char]));
+            } [char]));
         }
 
         function openChartDetail(chartId) {
@@ -544,19 +790,19 @@ $hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn 
             const empty = document.getElementById('chartDetailEmpty');
             const hasRows = Array.isArray(detail.rows) && detail.rows.length > 0;
 
-            head.innerHTML = hasRows
-                ? `<tr>${detail.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('')}</tr>`
-                : '';
-            body.innerHTML = hasRows
-                ? detail.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')
-                : '';
+            head.innerHTML = hasRows ?
+                `<tr>${detail.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('')}</tr>` :
+                '';
+            body.innerHTML = hasRows ?
+                detail.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('') :
+                '';
 
             empty.classList.toggle('d-none', hasRows);
             detailModal.show();
         }
 
         renderChart('ordersByDayChart', {
-            type: 'line',
+            type: ordersChartType,
             data: {
                 labels: ordersByDayLabels,
                 datasets: [{
@@ -565,37 +811,83 @@ $hasMissingCoreData = !$hasOrders || !$hasBikes || !$hasUsers || $revenueColumn 
                     borderColor: '#198754',
                     backgroundColor: 'rgba(25, 135, 84, 0.12)',
                     fill: true,
-                    tension: 0.35
+                    tension: 0.35,
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
                 }]
             },
-            options: { responsive: true, maintainAspectRatio: false }
+            // options: { responsive: true, maintainAspectRatio: false }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0,
+                            stepSize: 1,
+                            callback: function(value) {
+                                return Number.isInteger(value) ? value : null;
+                            }
+                        }
+                    }
+                },
+                elements: {
+                    line: {
+                        tension: 0.35
+                    },
+                    point: {
+                        radius: 4
+                    }
+                }
+            }
         });
 
         renderChart('orderStatusChart', {
             type: 'doughnut',
             data: {
                 labels: orderStatusLabels,
-                datasets: [{ data: orderStatusValues, backgroundColor: chartColors }]
+                datasets: [{
+                    data: orderStatusValues,
+                    backgroundColor: chartColors
+                }]
             },
-            options: { responsive: true, maintainAspectRatio: false }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
         });
 
         renderChart('topBikesChart', {
             type: 'bar',
             data: {
                 labels: topBikeLabels,
-                datasets: [{ label: 'Số đơn', data: topBikeValues, backgroundColor: '#198754' }]
+                datasets: [{
+                    label: 'Số lượng hoàn tất',
+                    data: topBikeValues,
+                    backgroundColor: '#198754'
+                }]
             },
-            options: { responsive: true, maintainAspectRatio: false }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
         });
 
         renderChart('topSellersChart', {
             type: 'bar',
             data: {
                 labels: topSellerLabels,
-                datasets: [{ label: 'Số tin đăng', data: topSellerValues, backgroundColor: '#0d6efd' }]
+                datasets: [{
+                    label: 'Số tin đăng',
+                    data: topSellerValues,
+                    backgroundColor: '#0d6efd'
+                }]
             },
-            options: { responsive: true, maintainAspectRatio: false }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
         });
     </script>
 </body>
