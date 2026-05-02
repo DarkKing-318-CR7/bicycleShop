@@ -9,7 +9,7 @@ $currentUser = currentUser();
 $isLoggedIn = isLoggedIn();
 $userRole = $currentUser['role'] ?? '';
 $buyerId = (int) ($currentUser['id'] ?? 0);
-$userName = $currentUser['full_name'] ?? 'T?i kho?n';
+$userName = $currentUser['full_name'] ?? 'Tài khoản';
 $buyerName = $userName;
 $fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
 
@@ -210,6 +210,8 @@ if ($stmt) {
         </div>
     </footer>
 
+    <?php require __DIR__ . '/../includes/chat-widget.php'; ?>
+    <script src="<?= e(baseUrl('js/chat-widget.js')) ?>"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
 </html>

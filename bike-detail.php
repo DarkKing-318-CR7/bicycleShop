@@ -6,7 +6,7 @@ require_once __DIR__ . '/includes/functions.php';
 $currentUser = currentUser();
 $isLoggedIn = isLoggedIn();
 $userRole = $currentUser['role'] ?? '';
-$userName = $currentUser['full_name'] ?? 'T?i kho?n';
+$userName = $currentUser['full_name'] ?? 'Tài khoản';
 $fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=1400&q=80';
 $fallbackSellerAvatar = 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80';
 $bikeId = (int) ($_GET['id'] ?? 0);
@@ -222,15 +222,15 @@ $sellerAvatar = normalizeImagePath($bike['seller_avatar'] ?? '', $fallbackSeller
                 <span class="brand-mark"><i class="bi bi-bicycle"></i></span>
                 Bike Marketplace
             </a>
-            <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Chuy?n ??i ?i?u h??ng">
+            <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Chuyển đổi điều hướng">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="mainNav">
                 <ul class="navbar-nav mx-auto mb-3 mb-lg-0 gap-lg-3">
-                    <li class="nav-item"><a class="nav-link" href="index.php">Trang ch?</a></li>
-                    <li class="nav-item"><a class="nav-link active" href="bikes.php">Xe ??p</a></li>
-                    <li class="nav-item"><a class="nav-link" href="categories.php">Danh m?c</a></li>
-                    <li class="nav-item"><a class="nav-link" href="contact.php">Li?n h?</a></li>
+                    <li class="nav-item"><a class="nav-link" href="index.php">Trang chủ</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="bikes.php">Xe đạp</a></li>
+                    <li class="nav-item"><a class="nav-link" href="categories.php">Danh mục</a></li>
+                    <li class="nav-item"><a class="nav-link" href="contact.php">Liên hệ</a></li>
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
                     <?php if ($isLoggedIn): ?>
@@ -240,17 +240,17 @@ $sellerAvatar = normalizeImagePath($bike['seller_avatar'] ?? '', $fallbackSeller
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end shadow border-0">
                                 <?php if ($userRole === 'buyer'): ?>
-                                    <li><a class="dropdown-item" href="buyer/profile.php"><i class="bi bi-person me-2"></i>H? s?</a></li>
-                                    <li><a class="dropdown-item" href="buyer/my-orders.php"><i class="bi bi-receipt me-2"></i>??n mua c?a t?i</a></li>
-                                    <li><a class="dropdown-item" href="buyer/favorites.php"><i class="bi bi-heart me-2"></i>Xe y?u th?ch</a></li>
+                                    <li><a class="dropdown-item" href="buyer/profile.php"><i class="bi bi-person me-2"></i>Hồ sơ</a></li>
+                                    <li><a class="dropdown-item" href="buyer/my-orders.php"><i class="bi bi-receipt me-2"></i>Đơn mua của tôi</a></li>
+                                    <li><a class="dropdown-item" href="buyer/favorites.php"><i class="bi bi-heart me-2"></i>Xe yêu thích</a></li>
                                 <?php elseif ($userRole === 'seller'): ?>
-                                    <li><a class="dropdown-item" href="seller/my-bikes.php"><i class="bi bi-grid me-2"></i>Tin ??ng c?a t?i</a></li>
-                                    <li><a class="dropdown-item" href="seller/orders.php"><i class="bi bi-receipt me-2"></i>??n h?ng</a></li>
+                                    <li><a class="dropdown-item" href="seller/my-bikes.php"><i class="bi bi-grid me-2"></i>Tin đăng của tôi</a></li>
+                                    <li><a class="dropdown-item" href="seller/orders.php"><i class="bi bi-receipt me-2"></i>Đơn hàng</a></li>
                                 <?php elseif ($userRole === 'admin'): ?>
-                                    <li><a class="dropdown-item" href="admin/index.php"><i class="bi bi-speedometer2 me-2"></i>Trang qu?n tr?</a></li>
+                                    <li><a class="dropdown-item" href="admin/index.php"><i class="bi bi-speedometer2 me-2"></i>Trang quản trị</a></li>
                                 <?php endif; ?>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i>??ng xu?t</a></li>
+                                <li><a class="dropdown-item" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i>Đăng xuất</a></li>
                             </ul>
                         </div>
                     <?php else: ?>
@@ -542,6 +542,8 @@ $sellerAvatar = normalizeImagePath($bike['seller_avatar'] ?? '', $fallbackSeller
         </div>
     </footer>
 
+    <?php require __DIR__ . '/includes/chat-widget.php'; ?>
+    <script src="<?= e(baseUrl('js/chat-widget.js')) ?>"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
 </html>

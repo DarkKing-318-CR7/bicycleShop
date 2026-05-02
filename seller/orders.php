@@ -252,9 +252,8 @@ $sql = "
         o.{$amountColumn} AS order_total,
         o.contact_method,
         o.meeting_location,
-        {$cancelReasonSelect} AS cancel_reason,
-        COALESCE(b.title, 'Xe ??p th? thao') AS bike_title,
-        COALESCE(u.full_name, 'Ng??i mua') AS buyer_name,
+        COALESCE(b.title, 'Xe đạp thể thao') AS bike_title,
+        COALESCE(u.full_name, 'Người mua') AS buyer_name,
         COALESCE(img.image_url, ?) AS image_url
     FROM orders o
     INNER JOIN bikes b ON b.id = o.bike_id
@@ -567,6 +566,8 @@ if ($stmt) {
         </div>
     </footer>
 
+    <?php require __DIR__ . '/../includes/chat-widget.php'; ?>
+    <script src="<?= e(baseUrl('js/chat-widget.js')) ?>"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
 </html>

@@ -8,7 +8,7 @@ requireRole('buyer');
 $currentUser = currentUser();
 $isLoggedIn = isLoggedIn();
 $userRole = $currentUser['role'] ?? '';
-$userName = $currentUser['full_name'] ?? 'T?i kho?n';
+$userName = $currentUser['full_name'] ?? 'Tài khoản';
 $buyerId = (int)($currentUser['id'] ?? 0);
 $buyerName = $userName;
 
@@ -205,7 +205,7 @@ function formatDateVi(?string $date): string
                 <span class="brand-mark"><i class="bi bi-bicycle"></i></span>
                 Bike Marketplace
             </a>
-            <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Chuy?n ??i ?i?u h??ng">
+            <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Chuyển đổi điều hướng">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="mainNav">
@@ -220,11 +220,11 @@ function formatDateVi(?string $date): string
                         <?= e($userName) ?>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end shadow border-0">
-                        <li><a class="dropdown-item" href="buyer/profile.php"><i class="bi bi-person me-2"></i>H? s?</a></li>
-                        <li><a class="dropdown-item" href="buyer/my-orders.php"><i class="bi bi-receipt me-2"></i>??n mua c?a t?i</a></li>
-                        <li><a class="dropdown-item" href="buyer/favorites.php"><i class="bi bi-heart me-2"></i>Xe y?u th?ch</a></li>
+                        <li><a class="dropdown-item" href="buyer/profile.php"><i class="bi bi-person me-2"></i>Hồ sơ</a></li>
+                        <li><a class="dropdown-item" href="buyer/my-orders.php"><i class="bi bi-receipt me-2"></i>Đơn mua của tôi</a></li>
+                        <li><a class="dropdown-item" href="buyer/favorites.php"><i class="bi bi-heart me-2"></i>Xe yêu thích</a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i>??ng xu?t</a></li>
+                        <li><a class="dropdown-item" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i>Đăng xuất</a></li>
                     </ul>
                 </div>
             </div>
@@ -385,6 +385,8 @@ function formatDateVi(?string $date): string
         </div>
     </footer>
 
+    <?php require __DIR__ . '/includes/chat-widget.php'; ?>
+    <script src="<?= e(baseUrl('js/chat-widget.js')) ?>"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
