@@ -427,6 +427,8 @@ $homeLink = profileHomeLink((string) ($profile['role'] ?? $userRole));
         </div>
     </footer>
 
+    <?php require __DIR__ . '/includes/chat-widget.php'; ?>
+    <script src="<?= e(baseUrl('js/chat-widget.js')) ?>"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

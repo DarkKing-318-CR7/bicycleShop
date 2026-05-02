@@ -6,9 +6,11 @@ require_once __DIR__ . '/includes/functions.php';
 requireRole('buyer');
 
 $currentUser = currentUser();
+$isLoggedIn = isLoggedIn();
+$userRole = $currentUser['role'] ?? '';
+$userName = $currentUser['full_name'] ?? 'Tài khoản';
 $buyerId = (int)($currentUser['id'] ?? 0);
-
-$buyerName = $currentUser['full_name'] ?? 'Tài khoản';
+$buyerName = $userName;
 
 
 $fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
@@ -113,55 +115,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $error === '') {
     } elseif (!in_array($formData['payment_method'], ['cash', 'transfer'], true)) {
         $error = 'Phương thức thanh toán không hợp lệ.';
     } else {
-        $totalAmount = (float)($bike['price'] ?? 0);
-        $noteParts = [
-            'Phương thức liên hệ: ' . $formData['contact_method'],
-            'Phương thức thanh toán: ' . $formData['payment_method'],
-        ];
-
-        if ($formData['buyer_note'] !== '') {
-            $noteParts[] = 'Ghi chú: ' . $formData['buyer_note'];
-        }
-
-        $note = implode("\n", $noteParts);
-
         $insertSql = "
             INSERT INTO orders (
-                buyer_id,
+                order_code,
                 bike_id,
-                quantity,
-                total_amount,
+                buyer_id,
+                seller_id,
+                offered_price,
+                contact_method,
+                meeting_location,
+                buyer_note,
                 status,
-                shipping_name,
-                shipping_phone,
-                shipping_address,
-                note
-            ) VALUES (?, ?, 1, ?, 'pending', ?, ?, ?, ?)
+                payment_method,
+                payment_status,
+                quantity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'unpaid', 1)
         ";
 
         $insertStmt = $conn->prepare($insertSql);
 
         if ($insertStmt) {
+            $orderCode = 'ORD' . date('YmdHis') . random_int(100, 999);
+            $sellerId = (int)($bike['seller_id'] ?? 0);
+            $offeredPrice = (float)($bike['price'] ?? 0);
+
             $insertStmt->bind_param(
-                'iidssss',
-                $buyerId,
+                'siiidssss',
+                $orderCode,
                 $bikeId,
-                $totalAmount,
-                $buyerName,
-                $buyerPhone,
+                $buyerId,
+                $sellerId,
+                $offeredPrice,
+                $formData['contact_method'],
                 $formData['meeting_location'],
-                $note
+                $formData['buyer_note'],
+                $formData['payment_method']
             );
 
             if ($insertStmt->execute()) {
                 redirect('buyer/my-orders.php');
             } else {
-                $error = 'Không thể tạo đơn hàng lúc này. Vui lòng thử lại sau.';
+                $error = 'Khong the tao don hang luc nay. Vui long thu lai sau: ' . $insertStmt->error;
             }
 
             $insertStmt->close();
         } else {
-            $error = 'Không thể xử lý đơn hàng lúc này.';
+            $error = 'Khong the xu ly don hang luc nay: ' . $conn->error;
         }
     }
 }
@@ -206,7 +205,7 @@ function formatDateVi(?string $date): string
                 <span class="brand-mark"><i class="bi bi-bicycle"></i></span>
                 Bike Marketplace
             </a>
-            <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+            <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Chuyển đổi điều hướng">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="mainNav">
@@ -216,10 +215,17 @@ function formatDateVi(?string $date): string
                     <li class="nav-item"><a class="nav-link" href="categories.php">Danh mục</a></li>
                     <li class="nav-item"><a class="nav-link" href="contact.php">Liên hệ</a></li>
                 </ul>
-                <div class="d-flex flex-column flex-lg-row gap-2">
-                    <a href="buyer/my-orders.php" class="btn btn-outline-dark">Đơn hàng của tôi</a>
-                    <a href="profile.php" class="btn btn-outline-dark"><?= e($buyerName) ?></a>
-                    <a href="logout.php" class="btn btn-success">Đăng xuất</a>
+                <div class="dropdown">
+                    <button class="btn btn-outline-dark dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <?= e($userName) ?>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow border-0">
+                        <li><a class="dropdown-item" href="buyer/profile.php"><i class="bi bi-person me-2"></i>Hồ sơ</a></li>
+                        <li><a class="dropdown-item" href="buyer/my-orders.php"><i class="bi bi-receipt me-2"></i>Đơn mua của tôi</a></li>
+                        <li><a class="dropdown-item" href="buyer/favorites.php"><i class="bi bi-heart me-2"></i>Xe yêu thích</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i>Đăng xuất</a></li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -379,6 +385,8 @@ function formatDateVi(?string $date): string
         </div>
     </footer>
 
+    <?php require __DIR__ . '/includes/chat-widget.php'; ?>
+    <script src="<?= e(baseUrl('js/chat-widget.js')) ?>"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

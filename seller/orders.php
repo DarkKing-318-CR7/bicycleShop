@@ -17,7 +17,7 @@ $keyword = trim($_GET['keyword'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
 $sort = trim($_GET['sort'] ?? 'newest');
 
-$allowedStatuses = ['pending', 'confirmed', 'shipping', 'completed', 'cancelled'];
+$allowedStatuses = ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'];
 $allowedSorts = ['newest', 'oldest', 'price_desc', 'price_asc'];
 
 if (!in_array($statusFilter, $allowedStatuses, true)) {
@@ -53,7 +53,7 @@ function getOrderStatusMeta(string $status): array
     switch ($status) {
         case 'confirmed':
             return ['class' => 'status-approved', 'label' => 'Đã xác nhận'];
-        case 'shipping':
+        case 'in_progress':
             return ['class' => 'status-approved', 'label' => 'Đang giao dịch'];
         case 'completed':
             return ['class' => 'status-sold', 'label' => 'Hoàn tất'];
@@ -82,6 +82,10 @@ function getOrderAmountColumn(mysqli $conn): string
         $result->free();
     }
 
+    if (in_array('offered_price', $columns, true)) {
+        return 'offered_price';
+    }
+
     if (in_array('total_price', $columns, true)) {
         return 'total_price';
     }
@@ -106,7 +110,7 @@ function bindDynamicParams(mysqli_stmt $stmt, string $types, array $values): voi
 
 function updateSellerOrderStatus(mysqli $conn, int $orderId, int $sellerId, string $newStatus): bool
 {
-    if (!in_array($newStatus, ['pending', 'confirmed', 'shipping', 'completed', 'cancelled'], true)) {
+    if (!in_array($newStatus, ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'], true)) {
         return false;
     }
 
@@ -162,7 +166,7 @@ function updateSellerOrderStatus(mysqli $conn, int $orderId, int $sellerId, stri
                 ) AS completed_order
             )
               AND id <> ?
-              AND status IN ('pending', 'confirmed', 'shipping')
+              AND status IN ('pending', 'confirmed', 'in_progress')
         ");
 
         if (!$cancelOtherStmt) {
@@ -200,7 +204,7 @@ $stats = [
     'total' => 0,
     'pending' => 0,
     'confirmed' => 0,
-    'shipping' => 0,
+    'in_progress' => 0,
     'completed' => 0,
     'cancelled' => 0,
 ];
@@ -210,7 +214,7 @@ $statsSql = "
         COUNT(*) AS total_orders,
         SUM(CASE WHEN o.status = 'pending' THEN 1 ELSE 0 END) AS pending_orders,
         SUM(CASE WHEN o.status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed_orders,
-        SUM(CASE WHEN o.status = 'shipping' THEN 1 ELSE 0 END) AS shipping_orders,
+        SUM(CASE WHEN o.status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress_orders,
         SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END) AS completed_orders,
         SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_orders
     FROM orders o
@@ -230,7 +234,7 @@ if ($statsStmt) {
         $stats['total'] = (int) ($statsRow['total_orders'] ?? 0);
         $stats['pending'] = (int) ($statsRow['pending_orders'] ?? 0);
         $stats['confirmed'] = (int) ($statsRow['confirmed_orders'] ?? 0);
-        $stats['shipping'] = (int) ($statsRow['shipping_orders'] ?? 0);
+        $stats['in_progress'] = (int) ($statsRow['in_progress_orders'] ?? 0);
         $stats['completed'] = (int) ($statsRow['completed_orders'] ?? 0);
         $stats['cancelled'] = (int) ($statsRow['cancelled_orders'] ?? 0);
     }
@@ -240,11 +244,13 @@ $orders = [];
 $sql = "
     SELECT
         o.id,
+        o.order_code,
         o.bike_id,
         o.status,
         o.created_at,
         o.{$amountColumn} AS order_total,
-        o.shipping_phone,
+        o.contact_method,
+        o.meeting_location,
         COALESCE(b.title, 'Xe đạp thể thao') AS bike_title,
         COALESCE(u.full_name, 'Người mua') AS buyer_name,
         COALESCE(img.image_url, ?) AS image_url
@@ -265,13 +271,14 @@ $params = [$fallbackImage, $sellerId];
 $types = 'si';
 
 if ($keyword !== '') {
-    $sql .= " AND (b.title LIKE ? OR u.full_name LIKE ? OR o.shipping_phone LIKE ? OR CAST(o.id AS CHAR) LIKE ?)";
+    $sql .= " AND (b.title LIKE ? OR u.full_name LIKE ? OR o.order_code LIKE ? OR o.meeting_location LIKE ? OR CAST(o.id AS CHAR) LIKE ?)";
     $keywordLike = '%' . $keyword . '%';
     $params[] = $keywordLike;
     $params[] = $keywordLike;
     $params[] = $keywordLike;
     $params[] = $keywordLike;
-    $types .= 'ssss';
+    $params[] = $keywordLike;
+    $types .= 'sssss';
 }
 
 if ($statusFilter !== '') {
@@ -343,9 +350,6 @@ if ($stmt) {
                     <li class="nav-item"><a class="nav-link" href="#contact">Liên hệ</a></li>
                 </ul>
                 <div class="d-flex flex-column flex-lg-row gap-2">
-                    <a href="my-bikes.php" class="btn btn-outline-dark">Tin đăng</a>
-                    <a href="orders.php" class="btn btn-outline-dark">Đơn mua</a>
-                    <a href="add-bike.php" class="btn btn-success">Đăng tin mới</a>
                     <a href="../profile.php" class="btn btn-outline-dark"><?= e($sellerName) ?></a>
                     <a href="../logout.php" class="btn btn-success">Đăng xuất</a>
                 </div>
@@ -362,7 +366,27 @@ if ($stmt) {
             </div>
         </section>
 
-        <section class="container">
+        <div class="seller-dashboard-shell container">
+            <aside class="seller-dashboard-sidebar">
+                <div class="seller-sidebar-card">
+                    <div class="seller-sidebar-profile">
+                        <span class="seller-sidebar-avatar"><i class="bi bi-person-circle"></i></span>
+                        <div>
+                            <strong><?= e($sellerName) ?></strong>
+                            <small>Khu vực người bán</small>
+                        </div>
+                    </div>
+                    <nav class="seller-sidebar-nav" aria-label="Seller navigation">
+                        <a href="my-bikes.php" class="seller-sidebar-link"><i class="bi bi-grid"></i><span>Tin đăng của tôi</span></a>
+                        <a href="add-bike.php" class="seller-sidebar-link"><i class="bi bi-plus-circle"></i><span>Đăng tin mới</span></a>
+                        <a href="orders.php" class="seller-sidebar-link is-active"><i class="bi bi-receipt"></i><span>Đơn mua</span></a>
+                        <a href="../profile.php" class="seller-sidebar-link"><i class="bi bi-person"></i><span>Hồ sơ</span></a>
+                        <a href="../logout.php" class="seller-sidebar-link seller-sidebar-link-danger"><i class="bi bi-box-arrow-right"></i><span>Đăng xuất</span></a>
+                    </nav>
+                </div>
+            </aside>
+            <div class="seller-dashboard-main">
+        <section>
             <?php if ($successMessage !== ''): ?>
                 <div class="alert alert-success" role="alert">
                     <?= e($successMessage) ?>
@@ -397,7 +421,7 @@ if ($stmt) {
                 <div class="col-md-6 col-xl">
                     <div class="stats-card">
                         <span class="stats-icon"><i class="bi bi-arrow-repeat"></i></span>
-                        <div><small>Đang giao dịch</small><strong><?= e(number_format($stats['shipping'], 0, ',', '.')) ?></strong></div>
+                        <div><small>Đang giao dịch</small><strong><?= e(number_format($stats['in_progress'], 0, ',', '.')) ?></strong></div>
                     </div>
                 </div>
                 <div class="col-md-6 col-xl">
@@ -421,26 +445,26 @@ if ($stmt) {
                         type="text"
                         class="form-control"
                         name="keyword"
-                        placeholder="TĂ¬m theo mĂ£ Ä‘Æ¡n, xe, ngÆ°á»i mua, sá»‘ Ä‘iá»‡n thoáº¡i"
+                        placeholder="Tìm theo mã đơn, xe, người mua hoặc địa điểm"
                         value="<?= e($keyword) ?>"
                     >
                     <select name="status" class="form-select">
-                        <option value="" <?= $statusFilter === '' ? 'selected' : '' ?>>Táº¥t cáº£ tráº¡ng thĂ¡i</option>
-                        <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Chá» xĂ¡c nháº­n</option>
-                        <option value="confirmed" <?= $statusFilter === 'confirmed' ? 'selected' : '' ?>>ÄĂ£ xĂ¡c nháº­n</option>
-                        <option value="shipping" <?= $statusFilter === 'shipping' ? 'selected' : '' ?>>Äang giao dá»‹ch</option>
-                        <option value="completed" <?= $statusFilter === 'completed' ? 'selected' : '' ?>>HoĂ n táº¥t</option>
-                        <option value="cancelled" <?= $statusFilter === 'cancelled' ? 'selected' : '' ?>>ÄĂ£ há»§y</option>
+                        <option value="" <?= $statusFilter === "" ? "selected" : "" ?>>Tất cả trạng thái</option>
+                        <option value="pending" <?= $statusFilter === "pending" ? "selected" : "" ?>>Chờ xác nhận</option>
+                        <option value="confirmed" <?= $statusFilter === "confirmed" ? "selected" : "" ?>>Đã xác nhận</option>
+                        <option value="in_progress" <?= $statusFilter === "in_progress" ? "selected" : "" ?>>Đang giao dịch</option>
+                        <option value="completed" <?= $statusFilter === "completed" ? "selected" : "" ?>>Hoàn tất</option>
+                        <option value="cancelled" <?= $statusFilter === "cancelled" ? "selected" : "" ?>>Đã hủy</option>
                     </select>
                     <select name="sort" class="form-select">
-                        <option value="newest" <?= $sort === 'newest' ? 'selected' : '' ?>>Má»›i nháº¥t</option>
-                        <option value="oldest" <?= $sort === 'oldest' ? 'selected' : '' ?>>CÅ© nháº¥t</option>
-                        <option value="price_desc" <?= $sort === 'price_desc' ? 'selected' : '' ?>>GiĂ¡ cao Ä‘áº¿n tháº¥p</option>
-                        <option value="price_asc" <?= $sort === 'price_asc' ? 'selected' : '' ?>>GiĂ¡ tháº¥p Ä‘áº¿n cao</option>
+                        <option value="newest" <?= $sort === "newest" ? "selected" : "" ?>>Mới nhất</option>
+                        <option value="oldest" <?= $sort === "oldest" ? "selected" : "" ?>>Cũ nhất</option>
+                        <option value="price_desc" <?= $sort === "price_desc" ? "selected" : "" ?>>Giá cao đến thấp</option>
+                        <option value="price_asc" <?= $sort === "price_asc" ? "selected" : "" ?>>Giá thấp đến cao</option>
                     </select>
-                    <button type="submit" class="btn btn-outline-dark">Lá»c</button>
+                    <button type="submit" class="btn btn-outline-dark">Lọc</button>
                     <?php if ($keyword !== '' || $statusFilter !== '' || $sort !== 'newest'): ?>
-                        <a href="orders.php" class="btn btn-outline-dark">XĂ³a lá»c</a>
+                        <a href="orders.php" class="btn btn-outline-dark">Xóa lọc</a>
                     <?php endif; ?>
                 </form>
 
@@ -479,10 +503,10 @@ if ($stmt) {
                                         <?php elseif (($order['status'] ?? '') === 'confirmed'): ?>
                                             <form method="post" class="d-inline">
                                                 <input type="hidden" name="order_id" value="<?= e((int) ($order['id'] ?? 0)) ?>">
-                                                <input type="hidden" name="new_status" value="shipping">
+                                                <input type="hidden" name="new_status" value="in_progress">
                                                 <button type="submit" name="update_order_status" class="btn btn-success">Đang giao dịch</button>
                                             </form>
-                                        <?php elseif (($order['status'] ?? '') === 'shipping'): ?>
+                                        <?php elseif (($order['status'] ?? '') === 'in_progress'): ?>
                                             <form method="post" class="d-inline" onsubmit="return confirm('Hoàn tất đơn này và đánh dấu xe đã bán?');">
                                                 <input type="hidden" name="order_id" value="<?= e((int) ($order['id'] ?? 0)) ?>">
                                                 <input type="hidden" name="new_status" value="completed">
@@ -503,6 +527,8 @@ if ($stmt) {
                     <?php endif; ?>
                 </div>
             </div>
+            </div>
+        </div>
         </section>
     </main>
 
@@ -536,6 +562,8 @@ if ($stmt) {
         </div>
     </footer>
 
+    <?php require __DIR__ . '/../includes/chat-widget.php'; ?>
+    <script src="<?= e(baseUrl('js/chat-widget.js')) ?>"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
 </html>
