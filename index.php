@@ -320,8 +320,8 @@ $userHomeLink = getUserHomeLink($userRole);
                             </ul>
                         </div>
                     <?php else: ?>
-                        <a href="login.php" class="btn btn-outline-dark">??ng nh?p</a>
-                        <a href="register.php" class="btn btn-success">??ng k?</a>
+                        <a href="login.php" class="btn btn-outline-dark">Đăng nhập</a>
+                        <a href="register.php" class="btn btn-success">Đăng ký</a>
                     <?php endif; ?>
                 </div>
             </div>

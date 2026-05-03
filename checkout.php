@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/vnpay.php';
 
 requireRole('buyer');
 
@@ -112,9 +113,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $error === '') {
         $error = 'Phương thức liên hệ không hợp lệ.';
     } elseif ($formData['meeting_location'] === '') {
         $error = 'Vui lòng nhập địa điểm gặp giao dịch.';
-    } elseif (!in_array($formData['payment_method'], ['cash', 'transfer'], true)) {
+    } elseif (!in_array($formData['payment_method'], ['cash', 'vnpay'], true)) {
         $error = 'Phương thức thanh toán không hợp lệ.';
+    } elseif ($formData['payment_method'] === 'vnpay' && !vnpayIsConfigured()) {
+        $error = 'Cổng thanh toán VNPay chưa được cấu hình.';
     } else {
+        $paymentStatus = $formData['payment_method'] === 'vnpay' ? 'pending' : 'unpaid';
         $insertSql = "
             INSERT INTO orders (
                 order_code,
@@ -129,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $error === '') {
                 payment_method,
                 payment_status,
                 quantity
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'unpaid', 1)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 1)
         ";
 
         $insertStmt = $conn->prepare($insertSql);
@@ -140,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $error === '') {
             $offeredPrice = (float)($bike['price'] ?? 0);
 
             $insertStmt->bind_param(
-                'siiidssss',
+                'siiidsssss',
                 $orderCode,
                 $bikeId,
                 $buyerId,
@@ -149,18 +153,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $error === '') {
                 $formData['contact_method'],
                 $formData['meeting_location'],
                 $formData['buyer_note'],
-                $formData['payment_method']
+                $formData['payment_method'],
+                $paymentStatus
             );
 
             if ($insertStmt->execute()) {
+                if ($formData['payment_method'] === 'vnpay') {
+                    $paymentUrl = vnpayBuildPaymentUrl([
+                        'order_code' => $orderCode,
+                        'amount' => $offeredPrice,
+                    ], vnpayBaseUrl() . '/payment/vnpay_return.php');
+
+                    redirect($paymentUrl);
+                }
+
                 redirect('buyer/my-orders.php');
             } else {
-                $error = 'Khong the tao don hang luc nay. Vui long thu lai sau: ' . $insertStmt->error;
+                $error = 'Không thể tạo đơn hàng lúc này. Vui lòng thử lại sau: ' . $insertStmt->error;
             }
 
             $insertStmt->close();
         } else {
-            $error = 'Khong the xu ly don hang luc nay: ' . $conn->error;
+            $error = 'Không thể xử lý đơn hàng lúc này: ' . $conn->error;
         }
     }
 }
@@ -299,7 +313,7 @@ function formatDateVi(?string $date): string
                                     <span class="input-group-text"><i class="bi bi-wallet2"></i></span>
                                     <select class="form-select" id="payment_method" name="payment_method" required>
                                         <option value="cash" <?= $formData['payment_method'] === 'cash' ? 'selected' : '' ?>>Tiền mặt</option>
-                                        <option value="transfer" <?= $formData['payment_method'] === 'transfer' ? 'selected' : '' ?>>Chuyển khoản</option>
+                                        <option value="vnpay" <?= $formData['payment_method'] === 'vnpay' ? 'selected' : '' ?>>VNPay online</option>
                                     </select>
                                 </div>
                             </div>

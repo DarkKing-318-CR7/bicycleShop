@@ -60,6 +60,16 @@ function getPaymentStatusLabel(string $status): string
     return $status === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán';
 }
 
+function paymentStatusText(string $status): string
+{
+    return match ($status) {
+        'paid' => 'Đã thanh toán',
+        'pending' => 'Chờ thanh toán',
+        'failed' => 'Thanh toán lỗi',
+        default => 'Chưa thanh toán',
+    };
+}
+
 $sql = "
     SELECT
         o.id,
@@ -181,7 +191,7 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                 <div class="col-md-6 col-xl-4">
                     <div class="stats-card">
                         <span class="stats-icon"><i class="bi bi-credit-card"></i></span>
-                        <div><small>Thanh toán</small><strong><?= e(getPaymentStatusLabel((string) ($order['payment_status'] ?? 'unpaid'))) ?></strong></div>
+                        <div><small>Thanh toán</small><strong><?= e(paymentStatusText((string) ($order['payment_status'] ?? 'unpaid'))) ?></strong></div>
                     </div>
                 </div>
                 <div class="col-md-6 col-xl-4">
@@ -218,7 +228,7 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                         <div class="meta-grid">
                             <div class="meta-item"><small>Mã đơn</small><strong><?= e((string) ($order['order_code'] ?? 'ORD')) ?></strong></div>
                             <div class="meta-item"><small>Trạng thái đơn</small><strong><?= e($statusMeta['label']) ?></strong></div>
-                            <div class="meta-item"><small>Trạng thái thanh toán</small><strong><?= e(getPaymentStatusLabel((string) ($order['payment_status'] ?? 'unpaid'))) ?></strong></div>
+                            <div class="meta-item"><small>Trạng thái thanh toán</small><strong><?= e(paymentStatusText((string) ($order['payment_status'] ?? 'unpaid'))) ?></strong></div>
                             <div class="meta-item"><small>Ngày tạo</small><strong><?= e(formatDateVi($order['created_at'] ?? null)) ?></strong></div>
                             <div class="meta-item"><small>Cập nhật gần nhất</small><strong><?= e(formatDateVi($order['updated_at'] ?? null)) ?></strong></div>
                             <div class="meta-item"><small>Phương thức liên hệ</small><strong><?= e((string) ((isset($order['contact_method']) && trim((string) $order['contact_method']) !== '') ? $order['contact_method'] : 'Đang cập nhật')) ?></strong></div>
@@ -243,6 +253,9 @@ $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
                     <section class="sidebar-card">
                         <h2 class="section-heading">Điều hướng</h2>
                         <div class="d-grid gap-2">
+                            <?php if (($order['payment_method'] ?? '') === 'vnpay' && ($order['payment_status'] ?? '') !== 'paid' && !in_array((string) ($order['status'] ?? ''), ['completed', 'cancelled'], true)): ?>
+                                <a href="../payment/vnpay_create.php?order_id=<?= e((int) ($order['id'] ?? 0)) ?>" class="btn btn-outline-success">Thanh toán VNPay</a>
+                            <?php endif; ?>
                             <a href="../bike-detail.php?id=<?= e((int) ($order['bike_id'] ?? 0)) ?>" class="btn btn-success">Xem xe</a>
                             <a href="my-orders.php" class="btn btn-light border">Quay lại đơn mua</a>
                         </div>

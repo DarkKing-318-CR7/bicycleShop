@@ -72,6 +72,16 @@ function getPaymentStatusLabel(string $status): string
     return $status === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán';
 }
 
+function paymentStatusText(string $status): string
+{
+    return match ($status) {
+        'paid' => 'Đã thanh toán',
+        'pending' => 'Chờ thanh toán',
+        'failed' => 'Thanh toán lỗi',
+        default => 'Chưa thanh toán',
+    };
+}
+
 function bindDynamicParams(mysqli_stmt $stmt, string $types, array $values): void
 {
     if ($types === '' || empty($values)) {
@@ -289,10 +299,13 @@ if ($stmt) {
                                         <span class="status-badge <?= e($statusMeta['class']) ?>"><?= e($statusMeta['label']) ?></span>
                                         <div class="listing-meta">
                                             <span><i class="bi bi-cash-stack me-1"></i> <?= e(formatPriceVnd($order['offered_price'] ?? 0)) ?></span>
-                                            <span><i class="bi bi-credit-card me-1"></i> <?= e(getPaymentStatusLabel((string) ($order['payment_status'] ?? 'unpaid'))) ?></span>
+                                            <span><i class="bi bi-credit-card me-1"></i> <?= e(paymentStatusText((string) ($order['payment_status'] ?? 'unpaid'))) ?></span>
                                         </div>
                                     </div>
                                     <div class="listing-actions">
+                                        <?php if (($order['payment_method'] ?? '') === 'vnpay' && ($order['payment_status'] ?? '') !== 'paid' && !in_array((string) ($order['status'] ?? ''), ['completed', 'cancelled'], true)): ?>
+                                            <a href="../payment/vnpay_create.php?order_id=<?= e((int) ($order['id'] ?? 0)) ?>" class="btn btn-outline-success">Thanh toán VNPay</a>
+                                        <?php endif; ?>
                                         <a href="order-detail.php?id=<?= e((int) ($order['id'] ?? 0)) ?>" class="btn btn-success">Xem chi tiết</a>
                                     </div>
                                 </div>
