@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/support-messages.php';
 
 $currentUser = currentUser();
 $isLoggedIn = isLoggedIn();
@@ -9,7 +10,16 @@ $userRole = $currentUser['role'] ?? '';
 $userName = $currentUser['full_name'] ?? 'Tài khoản';
 $userEmail = $currentUser['email'] ?? '';
 $fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
-$contactSent = $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['contact_form']);
+$contactSent = false;
+$contactMessage = '';
+$contactMessageType = 'success';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['contact_form'])) {
+    $contactResult = saveSupportMessageFromContactPost($conn, $_POST, $currentUser);
+    $contactSent = $contactResult['success'];
+    $contactMessage = $contactResult['message'];
+    $contactMessageType = $contactSent ? 'success' : 'danger';
+}
 
 $stats = [
     'total_bikes' => 0,
@@ -524,9 +534,9 @@ $userHomeLink = getUserHomeLink($userRole);
                     <div class="col-lg-7">
                         <form class="contact-form h-100" action="index.php#contact" method="post">
                             <input type="hidden" name="contact_form" value="1">
-                            <?php if ($contactSent): ?>
-                                <div class="alert alert-success" role="alert">
-                                    Cảm ơn bạn đã liên hệ. Bike Marketplace sẽ phản hồi trong thời gian sớm nhất.
+                            <?php if ($contactMessage !== ''): ?>
+                                <div class="alert alert-<?= e($contactMessageType) ?>" role="alert">
+                                    <?= e($contactMessage) ?>
                                 </div>
                             <?php endif; ?>
                             <div class="row g-3">

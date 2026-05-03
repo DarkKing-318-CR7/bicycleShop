@@ -1,7 +1,9 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/notifications.php';
+require_once __DIR__ . '/../includes/support-messages.php';
 
 if (!isLoggedIn()) {
     redirect('../login.php');
@@ -258,10 +260,13 @@ if ($stmt) {
                     <div class="brand-title">Bike Marketplace Admin</div>
                 </div>
                 <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-3 w-100 justify-content-lg-end">
-                    <input type="text" class="form-control admin-search" style="max-width: 320px;" placeholder="Tìm kiếm tin đang chờ duyệt">
+                    <div class="admin-search-wrap" data-global-search-root>
+                        <input type="text" class="form-control admin-search" placeholder="Tìm kiếm hệ thống…" autocomplete="off" data-global-search-input data-global-search-url="../includes/global-search.php">
+                        <div class="admin-global-search-dropdown" data-global-search-results></div>
+                    </div>
                     <div class="d-flex align-items-center gap-2">
-                        <button class="admin-icon-btn" type="button"><i class="bi bi-bell"></i></button>
-                        <button class="admin-icon-btn" type="button"><i class="bi bi-chat-dots"></i></button>
+                        <?php renderAdminNotificationDropdown($conn); ?>
+                        <?php renderAdminSupportDropdown($conn); ?>
                         <div class="d-flex align-items-center gap-2">
                             <span class="admin-avatar"><?= e($adminInitials) ?></span>
                             <div class="small">
@@ -527,6 +532,8 @@ if ($stmt) {
     <?php endforeach; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <script src="../js/admin-notifications.js"></script>
+    <script src="../js/admin-global-search.js"></script>
 </body>
 
 </html>
