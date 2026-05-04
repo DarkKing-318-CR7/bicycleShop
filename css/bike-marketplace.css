@@ -1982,7 +1982,8 @@ footer a {
     position: relative;
 }
 
-.admin-dashboard-page .admin-notification-toggle {
+.admin-dashboard-page .admin-notification-toggle,
+.admin-dashboard-page .admin-support-toggle {
     position: relative;
 }
 
@@ -2077,9 +2078,28 @@ footer a {
     font-size: 0.84rem;
 }
 
+.admin-dashboard-page .admin-notification-content .admin-support-status {
+    color: var(--primary-dark);
+    font-weight: 700;
+}
+
 .admin-dashboard-page .admin-notification-empty {
     padding: 1.2rem;
     text-align: center;
+}
+
+.admin-dashboard-page .admin-notification-all {
+    display: block;
+    padding: 0.9rem 1.1rem;
+    border-top: 1px solid var(--border);
+    color: var(--primary-dark);
+    font-weight: 800;
+    text-align: center;
+}
+
+.admin-dashboard-page .admin-notification-all:hover {
+    background: var(--surface-soft);
+    color: var(--primary-dark);
 }
 
 .admin-dashboard-page .admin-avatar {

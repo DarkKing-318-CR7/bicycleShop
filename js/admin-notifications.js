@@ -1,8 +1,12 @@
 (function () {
-    var roots = document.querySelectorAll('[data-admin-notification]');
+    var roots = document.querySelectorAll('[data-admin-notification], [data-admin-support]');
 
     if (!roots.length) {
         return;
+    }
+
+    function getToggle(root) {
+        return root.querySelector('.admin-notification-toggle, #supportToggle');
     }
 
     function closeAll(exceptRoot) {
@@ -12,7 +16,7 @@
             }
 
             root.classList.remove('is-open');
-            var button = root.querySelector('.admin-notification-toggle');
+            var button = getToggle(root);
 
             if (button) {
                 button.setAttribute('aria-expanded', 'false');
@@ -20,8 +24,7 @@
         });
     }
 
-    roots.forEach(function (root) {
-        var button = root.querySelector('.admin-notification-toggle');
+    function initDropdown(root, button) {
         var dot = root.querySelector('[data-notification-dot]');
 
         if (!button) {
@@ -54,6 +57,10 @@
         root.addEventListener('click', function (event) {
             event.stopPropagation();
         });
+    }
+
+    roots.forEach(function (root) {
+        initDropdown(root, getToggle(root));
     });
 
     document.addEventListener('click', function () {

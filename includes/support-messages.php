@@ -119,13 +119,11 @@ function fetchRecentSupportMessages(mysqli $conn, int $limit = 5): array
     }
 
     $limit = max(1, min($limit, 5));
-    $status = 'new';
     $sql = "
-        SELECT sm.id, sm.name, sm.email, sm.phone, sm.subject, sm.message, sm.created_at,
+        SELECT sm.id, sm.name, sm.email, sm.phone, sm.subject, sm.message, sm.status, sm.created_at,
                u.full_name AS user_name, u.email AS user_email
         FROM support_messages sm
         LEFT JOIN users u ON u.id = sm.user_id
-        WHERE sm.status = ?
         ORDER BY sm.created_at DESC
         LIMIT ?
     ";
@@ -135,7 +133,7 @@ function fetchRecentSupportMessages(mysqli $conn, int $limit = 5): array
         return [];
     }
 
-    $stmt->bind_param('si', $status, $limit);
+    $stmt->bind_param('i', $limit);
     $stmt->execute();
     $result = $stmt->get_result();
     $messages = [];
@@ -172,6 +170,16 @@ function hasNewSupportMessages(mysqli $conn): bool
     $stmt->close();
 
     return (int) ($row['total'] ?? 0) > 0;
+}
+
+function supportDropdownStatusText(string $status): string
+{
+    return match ($status) {
+        'new' => 'Mới',
+        'read' => 'Đã đọc',
+        'resolved' => 'Đã xử lý',
+        default => $status,
+    };
 }
 
 function formatSupportMessageTime(?string $createdAt): string
@@ -236,22 +244,24 @@ function renderAdminSupportDropdown(mysqli $conn): void
     $messages = fetchRecentSupportMessages($conn, 5);
     $hasNew = hasNewSupportMessages($conn);
     ?>
-    <div class="admin-notification admin-support-dropdown" data-admin-notification>
+    <div class="admin-notification admin-support-dropdown" data-admin-support>
         <button
-            class="admin-icon-btn admin-notification-toggle"
+            id="supportToggle"
+            class="admin-icon-btn admin-support-toggle"
             type="button"
             aria-label="Tin nhắn hỗ trợ"
             aria-expanded="false"
+            aria-controls="supportDropdown"
         >
             <i class="bi bi-chat-dots"></i>
             <?php if ($hasNew): ?>
                 <span class="admin-notification-dot"></span>
             <?php endif; ?>
         </button>
-        <div class="admin-notification-dropdown" data-notification-dropdown>
-            <div class="admin-notification-head">Tin nhắn hỗ trợ</div>
+        <div id="supportDropdown" class="admin-notification-dropdown admin-support-menu">
+            <div class="admin-notification-head">Khiếu nại gần nhất</div>
             <?php if (empty($messages)): ?>
-                <div class="admin-notification-empty">Không có tin nhắn mới</div>
+                <div class="admin-notification-empty">Không có khiếu nại nào</div>
             <?php else: ?>
                 <div class="admin-notification-list">
                     <?php foreach ($messages as $message): ?>
@@ -263,6 +273,7 @@ function renderAdminSupportDropdown(mysqli $conn): void
                                 <strong><?= supportMessageEscape(supportMessageSenderName($message)) ?></strong>
                                 <span><?= supportMessageEscape($message['subject'] ?? '') ?></span>
                                 <span><?= supportMessageEscape(shortSupportMessageText($message['message'] ?? '', 58)) ?></span>
+                                <span class="admin-support-status"><?= supportMessageEscape(supportDropdownStatusText($message['status'] ?? 'new')) ?></span>
                                 <time datetime="<?= supportMessageEscape($message['created_at'] ?? '') ?>">
                                     <?= supportMessageEscape(formatSupportMessageTime($message['created_at'] ?? null)) ?>
                                 </time>
@@ -271,6 +282,7 @@ function renderAdminSupportDropdown(mysqli $conn): void
                     <?php endforeach; ?>
                 </div>
             <?php endif; ?>
+            <a class="admin-notification-all" href="support.php">Xem tất cả khiếu nại</a>
         </div>
     </div>
     <?php
