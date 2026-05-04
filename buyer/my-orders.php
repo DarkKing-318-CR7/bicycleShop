@@ -11,7 +11,7 @@ $userRole = $currentUser['role'] ?? '';
 $buyerId = (int) ($currentUser['id'] ?? 0);
 $userName = $currentUser['full_name'] ?? 'Tài khoản';
 $buyerName = $userName;
-$fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
+$fallbackImage = 'img/no-image.png';
 
 $keyword = trim($_GET['keyword'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
@@ -282,10 +282,18 @@ if ($stmt) {
                             if ($brandName !== '') {
                                 $subLine .= ' • ' . $brandName;
                             }
+                            $imageUrl = trim((string) ($order['image_url'] ?? $bike['image_url'] ?? ''));
+                            $imageUrl = ltrim($imageUrl, '/');
+
+                            if ($imageUrl === '') {
+                                $imageUrl = 'img/no-image.png';
+                            }
+
+                            $imageSrc = '/' . $imageUrl;
                             ?>
                             <article class="listing-item">
                                 <div class="listing-grid">
-                                    <img class="listing-thumb" src="<?= e((string) ($order['image_url'] ?? $fallbackImage)) ?>" alt="<?= e((string) ($order['bike_title'] ?? 'Xe đạp thể thao')) ?>">
+                                    <img class="order-bike-img" src="<?= e($imageSrc) ?>" alt="Bike Image">
                                     <div>
                                         <div class="listing-title"><?= e((string) ($order['order_code'] ?? 'ORD')) ?></div>
                                         <div class="listing-sub mb-2"><?= e((string) ($order['bike_title'] ?? 'Xe đạp thể thao')) ?></div>

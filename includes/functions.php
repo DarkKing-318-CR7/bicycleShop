@@ -31,7 +31,11 @@ function baseUrl(string $path = ''): string
     $base = defined('BASE_URL') ? rtrim(BASE_URL, '/') : '';
     $path = ltrim($path, '/');
 
-    return $base . '/' . $path;
+    if ($base === '') {
+        return '/' . $path;
+    }
+
+    return $path === '' ? $base . '/' : $base . '/' . $path;
 }
 
 function tableColumnExists(mysqli $conn, string $table, string $column): bool
@@ -74,4 +78,9 @@ function requireRole(string $role): void
     if (!hasRole($role)) {
         redirect(baseUrl('index.php'));
     }
+}
+
+function requireAdmin(): void
+{
+    requireRole('admin');
 }

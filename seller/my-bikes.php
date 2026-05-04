@@ -15,7 +15,7 @@ if (!hasRole('seller')) {
 $currentUser = currentUser();
 $sellerId = (int) ($currentUser['id'] ?? 0);
 $sellerName = $currentUser['full_name'] ?? 'Tài khoản';
-$fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
+$fallbackImage = 'img/no-image.png';
 
 $bikes = [];
 $stats = [
@@ -94,7 +94,7 @@ function getBikeStatusMeta(string $status): array
 
         case 'pending':
         default:
-            return ['class' => 'status-pending', 'label' => 'Chá» duyá»‡t'];
+            return ['class' => 'status-pending', 'label' => 'Chưa duyệt'];
     }
 }
 
@@ -547,39 +547,55 @@ $hasActiveFilters = $keyword !== '' || $statusFilter !== 'all' || $categoryId > 
                                     $location = $bike['location'] ?? 'Đang cập nhật';
                                     $viewCount = (int) ($bike['view_count'] ?? 0);
                                     $favoriteCount = (int) ($bike['favorite_count'] ?? 0);
-                                    $imageUrl = $bike['image_url'] ?? $fallbackImage;
+                                    $imageUrl = trim((string) ($bike['image_url'] ?? ''));
+                                    $imageUrl = ltrim($imageUrl, '/');
+                                    $imageUrl = preg_replace('#^(\.\./)+#', '', $imageUrl);
+                                    if ($imageUrl === '') {
+                                        $imageUrl = 'img/no-image.png';
+                                    }
+                                    $imageSrc = baseUrl($imageUrl);
                                     $bikeId = (int) ($bike['id'] ?? 0);
                                     $statusValue = strtolower((string) ($bike['status'] ?? 'pending'));
                                     ?>
-                                    <article class="listing-item">
-                                        <div class="listing-grid">
-                                            <img class="listing-thumb" src="<?= e($imageUrl) ?>" alt="<?= e($bikeTitle) ?>">
-                                            <div>
-                                                <div class="listing-title"><?= e($bikeTitle) ?></div>
-                                                <div class="listing-sub mb-2"><?= e($listingSub) ?></div>
-                                                <div class="listing-meta">
-                                                    <span><i class="bi bi-cash me-1"></i> <?= e(formatBikePrice($bike['price'] ?? 0)) ?></span>
-                                                    <span><i class="bi bi-geo-alt me-1"></i> <?= e($location) ?></span>
-                                                    <span><i class="bi bi-calendar-event me-1"></i> <?= e(formatBikeDate($bike['created_at'] ?? null)) ?></span>
-                                                </div>
+                                    <article class="bike-card">
+                                        <div class="bike-image">
+                                            <img src="<?= e('/' . ltrim($imageUrl, '/')) ?>" alt="<?= e($bike['title'] ?? 'Xe đạp') ?>">
+                                        </div>
+
+                                        <div class="bike-info">
+                                            <h3 class="bike-title"><?= e($bike['title'] ?? 'Xe đạp') ?></h3>
+                                            <div class="bike-meta">
+                                                <span><?= e($categoryName) ?></span>
+                                                <?php if ($brandName !== ''): ?>
+                                                    <span>•</span>
+                                                    <span><?= e($brandName) ?></span>
+                                                <?php endif; ?>
                                             </div>
-                                            <div class="listing-side">
-                                                <span class="status-badge <?= e($statusMeta['class']) ?>"><?= e($statusMeta['label']) ?></span>
-                                                <div class="listing-meta">
-                                                    <span><i class="bi bi-eye me-1"></i> <?= e(number_format($viewCount, 0, ',', '.')) ?> lượt xem</span>
-                                                    <span><i class="bi bi-heart me-1"></i> <?= e(number_format($favoriteCount, 0, ',', '.')) ?> yêu thích</span>
-                                                </div>
+                                            <div class="bike-price"><?= e(formatBikePrice($bike['price'] ?? 0)) ?></div>
+                                            <div class="bike-extra">
+                                                <span><i class="bi bi-geo-alt"></i> <?= e($location) ?></span>
+                                                <span><i class="bi bi-calendar-event"></i> <?= e(formatBikeDate($bike['created_at'] ?? null)) ?></span>
+                                                <span><i class="bi bi-eye"></i> <?= e(number_format($viewCount, 0, ',', '.')) ?></span>
+                                                <span><i class="bi bi-heart"></i> <?= e(number_format($favoriteCount, 0, ',', '.')) ?></span>
                                             </div>
-                                            <div class="listing-actions">
+                                            <span class="status-badge <?= e($statusMeta['class']) ?> <?= e(str_replace('status-', '', $statusMeta['class'])) ?>"><?= e($statusMeta['label']) ?></span>
+                                        </div>
+
+                                        <div class="bike-actions">
+                                            <div class="seller-actions-row">
                                                 <a href="../bike-detail.php?id=<?= e($bikeId) ?>" class="btn btn-outline-dark">Xem</a>
                                                 <a href="edit-bike.php?id=<?= e($bikeId) ?>" class="btn btn-outline-success">Sửa</a>
-                                                <form method="post" action="my-bikes.php" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa tin đăng này?');">
+                                                <form method="post" action="my-bikes.php" onsubmit="return confirm('Bạn có chắc muốn xóa tin đăng này?');">
                                                     <input type="hidden" name="action" value="delete_bike">
                                                     <input type="hidden" name="bike_id" value="<?= e($bikeId) ?>">
-                                                    <button type="submit" class="btn btn-outline-dark">Xóa</button>
+                                                    <button type="submit" class="btn btn-danger">Xóa</button>
                                                 </form>
                                                 <?php if (!in_array($statusValue, ['sold', 'completed'], true)): ?>
-                                                    <a href="#" class="btn btn-success">Đánh dấu đã bán</a>
+                                                    <form method="post" action="my-bikes.php">
+                                                        <input type="hidden" name="action" value="mark_sold">
+                                                        <input type="hidden" name="bike_id" value="<?= e($bikeId) ?>">
+                                                        <button type="button" class="btn btn-primary">Đánh dấu đã bán</button>
+                                                    </form>
                                                 <?php endif; ?>
                                             </div>
                                         </div>

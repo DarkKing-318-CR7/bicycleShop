@@ -8,7 +8,7 @@ requireRole('seller');
 $currentUser = currentUser();
 $sellerId = (int) ($currentUser['id'] ?? 0);
 $sellerName = $currentUser['full_name'] ?? 'Người bán';
-$fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=900&q=80';
+$fallbackImage = 'img/no-image.png';
 $successMessage = $_SESSION['success_message'] ?? '';
 $errorMessage = $_SESSION['error_message'] ?? '';
 unset($_SESSION['success_message'], $_SESSION['error_message']);
@@ -472,10 +472,20 @@ if ($stmt) {
                 <div class="listing-list">
                     <?php if (!empty($orders)): ?>
                         <?php foreach ($orders as $order): ?>
-                            <?php $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending')); ?>
+                            <?php
+                            $statusMeta = getOrderStatusMeta((string) ($order['status'] ?? 'pending'));
+                            $imageUrl = trim((string) ($order['image_url'] ?? $bike['image_url'] ?? ''));
+                            $imageUrl = ltrim($imageUrl, '/');
+
+                            if ($imageUrl === '') {
+                                $imageUrl = 'img/no-image.png';
+                            }
+
+                            $imageSrc = '/' . $imageUrl;
+                            ?>
                             <article class="listing-item">
                                 <div class="listing-grid">
-                                    <img class="listing-thumb" src="<?= e($order['image_url'] ?? $fallbackImage) ?>" alt="<?= e($order['bike_title'] ?? 'Xe đạp thể thao') ?>">
+                                    <img class="order-bike-img" src="<?= e($imageSrc) ?>" alt="Bike Image">
                                     <div>
                                         <div class="listing-title">#<?= e((int) ($order['id'] ?? 0)) ?></div>
                                         <div class="listing-sub mb-2"><?= e($order['bike_title'] ?? 'Xe đạp thể thao') ?></div>

@@ -331,3 +331,46 @@ CREATE TABLE `users` (
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-05-03 14:39:24
+
+use bicycle_shop;
+
+INSERT INTO categories (name, slug, description) VALUES
+('Xe đua (Road)', 'xe-dua', 'Xe đạp tốc độ cao, nhẹ, dùng cho đường nhựa'),
+('Xe địa hình (MTB)', 'xe-dia-hinh', 'Xe leo núi, đường xấu, off-road'),
+('Xe thành phố', 'xe-thanh-pho', 'Xe đi làm, đi học hằng ngày'),
+('Xe touring', 'xe-touring', 'Xe đi phượt, đi đường dài'),
+('Xe gấp', 'xe-gap', 'Xe có thể gấp gọn, tiện di chuyển');
+
+INSERT INTO brands (name, slug, description) VALUES
+('Trek', 'trek', 'Thương hiệu xe đạp nổi tiếng từ Mỹ'),
+('Giant', 'giant', 'Hãng xe đạp lớn nhất thế giới'),
+('Specialized', 'specialized', 'Xe đạp cao cấp, hiệu năng cao'),
+('Cannondale', 'cannondale', 'Xe đạp công nghệ tiên tiến'),
+('Merida', 'merida', 'Xe đạp phổ biến tại châu Á'),
+('Twitter', 'twitter-bike', 'Xe giá tốt, phổ biến tại Việt Nam');
+INSERT INTO bikes (
+    seller_id, category_id, brand_id, title, slug, description,
+    price, condition_status, frame_size, wheel_size, color, location, status
+) VALUES (
+    11, 9, 6,
+    'Checkpoint ALR 5 2023',
+    'checkpoint-alr-5-2023-demo',
+    'Trek Checkpoint ALR 5...',
+    65000000,
+    'new',
+    'Size M',
+    '700C',
+    'Đen',
+    'TP. Hồ Chí Minh',
+    'approved'
+);
+
+SET @bike_id = LAST_INSERT_ID();
+
+INSERT INTO bike_images (bike_id, image_url, is_primary, sort_order)
+VALUES
+(@bike_id, 'uploads/bikes/alr5/1.png', 1, 1),
+(@bike_id, 'uploads/bikes/alr5/2.png', 0, 2),
+(@bike_id, 'uploads/bikes/alr5/3.png', 0, 3),
+(@bike_id, 'uploads/bikes/alr5/4.png', 0, 4),
+(@bike_id, 'uploads/bikes/alr5/5.png', 0, 5);

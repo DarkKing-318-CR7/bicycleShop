@@ -24,7 +24,7 @@ $brands = [];
 $bikeImages = [];
 $errors = [];
 $success = '';
-$fallbackImage = 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?auto=format&fit=crop&w=800&q=80';
+$fallbackImage = 'img/no-image.png';
 
 $formData = [
     'title' => '',
@@ -109,14 +109,17 @@ function normalizeImagePath(?string $path, string $fallback): string
     $path = trim((string) $path);
 
     if ($path === '') {
-        return $fallback;
+        $path = 'img/no-image.png';
     }
 
-    if (preg_match('/^https?:\/\//i', $path)) {
-        return $path;
+    $path = ltrim($path, '/');
+    $path = preg_replace('#^(\.\./)+#', '', $path);
+
+    if ($path === '') {
+        $path = 'img/no-image.png';
     }
 
-    return '../' . ltrim($path, '/');
+    return baseUrl($path);
 }
 
 function uploadBikeImage(array $file, string $uploadDir, string $webPrefix): ?string
@@ -398,7 +401,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$previewImage = !empty($bikeImages) ? normalizeImagePath($bikeImages[0]['image_url'] ?? '', $fallbackImage) : $fallbackImage;
+$previewImage = !empty($bikeImages) ? normalizeImagePath($bikeImages[0]['image_url'] ?? $bike['image_url'] ?? '', $fallbackImage) : normalizeImagePath('', $fallbackImage);
 ?>
 <!DOCTYPE html>
 <html lang="vi">
@@ -588,12 +591,21 @@ $previewImage = !empty($bikeImages) ? normalizeImagePath($bikeImages[0]['image_u
                                     <?php if (!empty($bikeImages)): ?>
                                         <?php foreach ($bikeImages as $image): ?>
                                             <div class="col-6 col-md-3">
-                                                <img src="<?= e(normalizeImagePath($image['image_url'] ?? '', $fallbackImage)) ?>" alt="Ảnh xe" class="img-fluid rounded-4 shadow-sm">
+                                                <?php
+                                                $imageUrl = trim((string) ($image['image_url'] ?? $bike['image_url'] ?? ''));
+                                                $imageUrl = ltrim($imageUrl, '/');
+                                                $imageUrl = preg_replace('#^(\.\./)+#', '', $imageUrl);
+                                                if ($imageUrl === '') {
+                                                    $imageUrl = 'img/no-image.png';
+                                                }
+                                                $imageSrc = baseUrl($imageUrl);
+                                                ?>
+                                                <img src="<?= e($imageSrc) ?>" alt="Ảnh xe" class="img-fluid rounded-4 shadow-sm">
                                             </div>
                                         <?php endforeach; ?>
                                     <?php else: ?>
                                         <div class="col-6 col-md-3">
-                                            <img src="<?= e($fallbackImage) ?>" alt="Ảnh xe" class="img-fluid rounded-4 shadow-sm">
+                                            <img src="<?= e(normalizeImagePath('', $fallbackImage)) ?>" alt="Ảnh xe" class="img-fluid rounded-4 shadow-sm">
                                         </div>
                                     <?php endif; ?>
                                     <div class="col-12 d-flex flex-column flex-sm-row gap-3">
